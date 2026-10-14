@@ -689,7 +689,7 @@ export default function DashboardPage() {
       setRecentSales(latest);
       setLowStock(alerts);
     } catch (err) {
-      console.error("Erreur dashboard MonKiosk:", err);
+      console.error("Erreur dashboard MonKiosk :", err);
       setError(getErrorMessage(err));
     } finally {
       setLoading(false);
