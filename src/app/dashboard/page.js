@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import NewSaleModal from "@/components/ventes/NewSaleModal";
 import {
   ShoppingCart,
   Package,
@@ -44,11 +45,20 @@ const formatDate = (date) =>
     year: "numeric",
   }).format(date);
 
-const formatTime = (date) =>
-  new Intl.DateTimeFormat("fr-FR", {
+function formatTime(value) {
+  if (!value) return "Date inconnue";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Date inconnue";
+  }
+
+  return new Intl.DateTimeFormat("fr-FR", {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}   
 
 const startOfDay = (date) => {
   const result = new Date(date);
@@ -81,7 +91,7 @@ const getErrorMessage = (error) =>
 const shortcuts = [
   {
     title: "Nouvelle vente",
-    href: "/dashboard/ventes/nouveau",
+    action: "new-sale",
     icon: ShoppingCart,
     color: "bg-green-500",
   },
@@ -315,37 +325,62 @@ function RecentSales({ sales }) {
    RACCOURCIS
 ============================================================ */
 
-function QuickActions() {
+
+function QuickActions({ onNewSale }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-[#14233B]">
-        Raccourcis
+    <section className="rounded-2xl border border-gray-200 bg-white p-5">
+      <h2 className="text-lg font-bold text-gray-900">
+        Actions rapides
       </h2>
-      <p className="mt-1 text-sm text-gray-500">
-        Accédez rapidement aux principales fonctions
-      </p>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {shortcuts.map((shortcut) => {
           const Icon = shortcut.icon;
 
+          if (shortcut.action === "new-sale") {
+            return (
+              <button
+                key={shortcut.title}
+                type="button"
+                onClick={onNewSale}
+                className="flex flex-col items-center gap-3 rounded-xl border border-gray-100 p-4 text-center transition hover:border-emerald-300 hover:bg-emerald-50"
+              >
+                <span
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl text-white ${shortcut.color}`}
+                >
+                  <Icon className="h-5 w-5" />
+                </span>
+
+                <span className="text-sm font-semibold text-gray-700">
+                  {shortcut.title}
+                </span>
+              </button>
+            );
+          }
+
           return (
             <Link
               key={shortcut.title}
               href={shortcut.href}
-              className={`flex min-h-[82px] flex-col items-center justify-center rounded-xl px-2 py-3 text-center text-white transition duration-200 hover:-translate-y-1 hover:shadow-lg ${shortcut.color}`}
+              className="flex flex-col items-center gap-3 rounded-xl border border-gray-100 p-4 text-center transition hover:border-gray-200 hover:bg-gray-50"
             >
-              <Icon className="h-6 w-6" />
-              <span className="mt-2 text-[11px] font-semibold leading-tight">
+              <span
+                className={`flex h-11 w-11 items-center justify-center rounded-xl text-white ${shortcut.color}`}
+              >
+                <Icon className="h-5 w-5" />
+              </span>
+
+              <span className="text-sm font-semibold text-gray-700">
                 {shortcut.title}
               </span>
             </Link>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
+
 
 /* ============================================================
    ALERTE STOCK
@@ -424,6 +459,7 @@ export default function DashboardPage() {
   const [dismissed, setDismissed] = useState(false);
   const [userName, setUserName] = useState("votre kiosque");
   const [currentDate, setCurrentDate] = useState(null);
+  const [newSaleOpen, setNewSaleOpen] = useState(false);
   useEffect(() => {
   setCurrentDate(new Date());
   }, []);
@@ -697,9 +733,35 @@ export default function DashboardPage() {
     }
   }, []);
 
+  
   useEffect(() => {
     loadDashboard();
+
+    const handleFocus = () => {
+      loadDashboard(true);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadDashboard(true);
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+    };
   }, [loadDashboard]);
+
 
   const statistics = [
     {
@@ -847,7 +909,13 @@ export default function DashboardPage() {
               : "xl:grid-cols-[1.55fr_1fr]"
           }`}
         >
-          <QuickActions />
+          <QuickActions onNewSale={() => setNewSaleOpen(true)} />
+
+          <NewSaleModal
+            open={newSaleOpen}
+            onClose={() => setNewSaleOpen(false)}
+            onSaved={loadDashboard}
+          />
           <StockAlert
             products={lowStock}
             dismissed={dismissed}
