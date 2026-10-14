@@ -45,6 +45,13 @@ export default function VentesPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [activeTab, setActiveTab] = useState("vente");
+  // 1. Ajoutez un state pour stocker la date du jour (au début de votre composant)
+  const [today, setToday] = useState<Date | null>(null);
+
+  useEffect(() => {
+    // S'exécute uniquement côté client, une seule fois au chargement
+    setToday(new Date());
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -319,20 +326,21 @@ export default function VentesPage() {
     }
   };
 
+  // 2. Modifiez votre useMemo pour utiliser ce state
   const todaySales = useMemo(() => {
-    const today = new Date();
+    if (!today) return []; // Retourne un tableau vide pendant le rendu serveur
 
     return sales.filter((sale) => {
-      const date = new Date(sale.date_vente);
-
+      const saleDate = new Date(sale.date_vente);
+      
+      // Exemple de comparaison stricte du jour (sans les heures/minutes)
       return (
-        date.getFullYear() === today.getFullYear() &&
-        date.getMonth() === today.getMonth() &&
-        date.getDate() === today.getDate() &&
-        sale.statut === "terminee"
+        saleDate.getDate() === today.getDate() &&
+        saleDate.getMonth() === today.getMonth() &&
+        saleDate.getFullYear() === today.getFullYear()
       );
     });
-  }, [sales]);
+  }, [sales, today]); // Ajoutez 'today' dans les dépendances
 
   const todayTotal = todaySales.reduce(
     (sum, sale) => sum + Number(sale.montant_total || 0),
