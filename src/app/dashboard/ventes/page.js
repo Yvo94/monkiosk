@@ -46,10 +46,9 @@ export default function VentesPage() {
   const [success, setSuccess] = useState("");
   const [activeTab, setActiveTab] = useState("vente");
   // 1. Ajoutez un state pour stocker la date du jour (au début de votre composant)
-  const [today, setToday] = useState<Date | null>(null);
+  const [today, setToday] = useState(null);
 
   useEffect(() => {
-    // S'exécute uniquement côté client, une seule fois au chargement
     setToday(new Date());
   }, []);
 
