@@ -227,11 +227,11 @@ export default function ProduitsPage() {
     const stockMinimum = Number(form.stock_minimum);
 
     if (
-      !Number.isFinite(prixAchat) ||
+      //!Number.isFinite(prixAchat) ||
       !Number.isFinite(prixVente) ||
       !Number.isFinite(stockActuel) ||
       !Number.isFinite(stockMinimum) ||
-      prixAchat < 0 ||
+      //prixAchat < 0 ||
       prixVente < 0 ||
       stockActuel < 0 ||
       stockMinimum < 0
@@ -825,7 +825,7 @@ export default function ProduitsPage() {
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Prix d'achat (FCFA) *
+                    Prix d'achat (FCFA) 
                   </label>
                   <input
                     type="number"

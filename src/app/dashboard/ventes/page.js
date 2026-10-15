@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -40,9 +39,13 @@ const formatDate = (value) => {
 
 const paymentLabels = {
   especes: "Espèces",
-  mobile_money: "Mobile Money",
+  wave: "Wave",
+  orange_money: "Orange Money",
+  mtn_money: "MTN Money",
+  moov_money: "Moov Money",
   carte: "Carte bancaire",
-  virement: "Virement",
+  virement: "Virement bancaire",
+  autre: "Autre",
   credit: "Crédit",
   mixte: "Paiement mixte",
 };
@@ -53,12 +56,31 @@ const statusLabels = {
   brouillon: "Brouillon",
 };
 
+/* Modes proposés pour les nouvelles ventes */
 const PAYMENT_OPTIONS = [
   { value: "especes", label: "Espèces" },
-  { value: "mobile_money", label: "Mobile Money" },
+  { value: "wave", label: "Wave" },
+  { value: "orange_money", label: "Orange Money" },
+  { value: "mtn_money", label: "MTN Money" },
+  { value: "moov_money", label: "Moov Money" },
   { value: "carte", label: "Carte bancaire" },
-  { value: "virement", label: "Virement" },
+  { value: "virement", label: "Virement bancaire" },
+  { value: "autre", label: "Autre" },
+];
+
+/* Modes disponibles dans les filtres de l'historique.
+   Les anciens modes restent disponibles pour les ventes existantes. */
+const HISTORY_PAYMENT_OPTIONS = [
+  { value: "especes", label: "Espèces" },
+  { value: "wave", label: "Wave" },
+  { value: "orange_money", label: "Orange Money" },
+  { value: "mtn_money", label: "MTN Money" },
+  { value: "moov_money", label: "Moov Money" },
+  { value: "carte", label: "Carte bancaire" },
+  { value: "virement", label: "Virement bancaire" },
+  { value: "autre", label: "Autre" },
   { value: "credit", label: "Crédit" },
+  { value: "mixte", label: "Paiement mixte" },
 ];
 
 /* ============================================================
@@ -90,6 +112,10 @@ export default function VentesPage() {
   const [paymentMethod, setPaymentMethod] = useState("especes");
   const [paidAmount, setPaidAmount] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Filtres de l'historique des ventes
+  const [paymentFilter, setPaymentFilter] = useState("tous");
+  const [historySearch, setHistorySearch] = useState("");
 
   /* ============================================================
      CHARGEMENT DES DONNÉES
@@ -126,8 +152,10 @@ export default function VentesPage() {
         .maybeSingle();
 
       if (kioskError) throw kioskError;
+
       console.log("Utilisateur connecté :", user.id);
       console.log("Kiosque chargé :", kioskData?.id);
+
       if (!kioskData) {
         throw new Error(
           "Aucun kiosque actif n'est associé à votre compte."
@@ -167,11 +195,7 @@ export default function VentesPage() {
           .eq("actif", true)
           .order("nom", { ascending: true }),
       ]);
-      console.log("=== DIAGNOSTIC MONKIOSK ===");
-      console.log("Erreur ventes :", salesError);
-      console.log("Ventes récupérées :", salesData);
-      console.log("Erreur statistiques :", statsError);
-      console.log("Statistiques récupérées :", statsData);
+
       if (salesError) throw salesError;
       if (statsError) throw statsError;
       if (productsError) throw productsError;
@@ -189,8 +213,7 @@ export default function VentesPage() {
         completedCount: completedSales.length,
 
         revenue: completedSales.reduce(
-          (sum, sale) =>
-            sum + Number(sale.montant_total || 0),
+          (sum, sale) => sum + Number(sale.montant_total || 0),
           0
         ),
 
@@ -267,6 +290,26 @@ export default function VentesPage() {
       })
       .slice(0, 30);
   }, [products, search]);
+
+  /* ============================================================
+     FILTRES DE L'HISTORIQUE DES VENTES
+  ============================================================ */
+
+  const filteredSales = useMemo(() => {
+    const term = historySearch.trim().toLowerCase();
+
+    return sales.filter((sale) => {
+      const matchesPayment =
+        paymentFilter === "tous" ||
+        sale.mode_paiement === paymentFilter;
+
+      const matchesSearch =
+        !term ||
+        String(sale.numero || "").toLowerCase().includes(term);
+
+      return matchesPayment && matchesSearch;
+    });
+  }, [sales, paymentFilter, historySearch]);
 
   /* ============================================================
      CALCUL DU PANIER
@@ -655,38 +698,126 @@ export default function VentesPage() {
         />
       </div>
 
-      {/* Historique */}
+      {/* Historique des ventes avec filtres */}
       <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-        <div className="border-b border-gray-100 p-4 sm:p-5">
-          <h2 className="text-lg font-bold text-gray-900">
-            Historique des ventes
-          </h2>
+        <div className="space-y-4 border-b border-gray-100 p-4 sm:p-5">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">
+              Historique des ventes
+            </h2>
 
-          <p className="mt-1 text-sm text-gray-500">
-            Les 30 ventes les plus récentes.
-          </p>
+            <p className="mt-1 text-sm text-gray-500">
+              Les 30 ventes les plus récentes.
+            </p>
+          </div>
+
+          {/* Filtre par paiement et recherche par numéro */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="history-payment-filter"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Mode de paiement
+              </label>
+
+              <select
+                id="history-payment-filter"
+                value={paymentFilter}
+                onChange={(event) =>
+                  setPaymentFilter(event.target.value)
+                }
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="tous">
+                  Tous les modes de paiement
+                </option>
+
+                {HISTORY_PAYMENT_OPTIONS.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="history-sale-search"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Numéro de vente
+              </label>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+
+                <input
+                  id="history-sale-search"
+                  type="search"
+                  value={historySearch}
+                  onChange={(event) =>
+                    setHistorySearch(event.target.value)
+                  }
+                  placeholder="Rechercher un numéro..."
+                  className="w-full rounded-xl border border-gray-200 py-3 pl-10 pr-4 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Nombre de résultats et réinitialisation */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-gray-500">
+              {filteredSales.length} vente(s) affichée(s)
+            </p>
+
+            {(paymentFilter !== "tous" ||
+              historySearch !== "") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentFilter("tous");
+                  setHistorySearch("");
+                }}
+                className="text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+              >
+                Réinitialiser les filtres
+              </button>
+            )}
+          </div>
         </div>
 
-        {sales.length === 0 ? (
+        {/* Résultats de l'historique */}
+        {filteredSales.length === 0 ? (
           <div className="p-10 text-center">
             <ShoppingCart className="mx-auto h-10 w-10 text-gray-300" />
 
             <p className="mt-3 font-medium text-gray-700">
-              Aucune vente enregistrée.
+              {sales.length === 0
+                ? "Aucune vente enregistrée."
+                : "Aucune vente ne correspond aux filtres."}
             </p>
 
             <p className="mt-1 text-sm text-gray-500">
-              Commence par enregistrer ta première vente.
+              {sales.length === 0
+                ? "Commence par enregistrer ta première vente."
+                : "Essaie un autre mode de paiement ou réinitialise les filtres."}
             </p>
 
-            <button
-              type="button"
-              onClick={openNewSale}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
-            >
-              <Plus className="h-4 w-4" />
-              Créer une vente
-            </button>
+            {sales.length === 0 && (
+              <button
+                type="button"
+                onClick={openNewSale}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+              >
+                <Plus className="h-4 w-4" />
+                Créer une vente
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -720,7 +851,7 @@ export default function VentesPage() {
               </thead>
 
               <tbody className="divide-y divide-gray-100">
-                {sales.map((sale) => (
+                {filteredSales.map((sale) => (
                   <tr
                     key={sale.id}
                     className="hover:bg-gray-50"

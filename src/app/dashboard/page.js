@@ -498,10 +498,9 @@ export default function DashboardPage() {
         window.location.replace("/login");
         return;
       }
-
+      
       const user = session.user;
 
-      
       const { data: kiosk, error: kioskError } = await supabase
         .from("kiosques")
         .select("id, nom, devise")
@@ -544,6 +543,7 @@ export default function DashboardPage() {
         profile?.nom?.trim() || "Utilisateur"
       );
 
+
       const now = new Date();
       const todayStart = startOfDay(now);
       const tomorrowStart = endOfDay(now);
@@ -578,6 +578,7 @@ export default function DashboardPage() {
         supabase
           .from("kiosque_achats")
           .select("id, date_achat, statut, montant_total")
+          .eq("kiosque_id", kiosk.id)
           .gte("date_achat", todayISO)
           .lt("date_achat", tomorrowISO)
           .eq("statut", "recu"),

@@ -14,8 +14,13 @@ import { supabase } from "@/lib/supabase/client";
 export default function Header({ onMenuClick }) {
   const [userName, setUserName] = useState("Utilisateur");
   const [userRole, setUserRole] = useState("");
+  const [kioskName, setKioskName] = useState("");
   const [loadingUser, setLoadingUser] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   useEffect(() => {
     let active = true;
 
@@ -32,30 +37,18 @@ export default function Header({ onMenuClick }) {
           if (active) {
             setUserName("Utilisateur");
             setUserRole("");
+            setKioskName("");
           }
           return;
         }
 
         const user = session.user;
 
+        // 1. Charger le profil utilisateur
         let query = supabase
           .from("users")
           .select("nom, role")
-          .limit(1);
-
-        if (user.email) {
-          query = query.or(
-            `email.eq.${user.email},auth_email.eq.${user.email}`
-          );
-        } else if (user.phone) {
-          query = query.eq("telephone", user.phone);
-        } else {
-          if (active) {
-            setUserName("Utilisateur");
-            setUserRole("");
-          }
-          return;
-        }
+          .eq("id", user.id);
 
         const {
           data: profile,
@@ -65,22 +58,30 @@ export default function Header({ onMenuClick }) {
         if (profileError) throw profileError;
 
         if (active) {
-          setUserName(
-            profile?.nom?.trim() || "Utilisateur"
-          );
-
+          setUserName(profile?.nom?.trim() || "Utilisateur");
           setUserRole(profile?.role || "");
+        }
+
+        // 2. Charger le kiosque associé au propriétaire connecté
+        const {
+          data: kiosque,
+          error: kiosqueError,
+        } = await supabase
+          .from("kiosques")
+          .select("nom")
+          .eq("owner_id", user.id)
+          .maybeSingle();
+
+        if (kiosqueError) throw kiosqueError;
+
+        if (active) {
+          setKioskName(kiosque?.nom?.trim() || "");
         }
       } catch (error) {
         console.error(
-          "Erreur de récupération du profil :",
+          "Erreur de récupération des informations :",
           error
         );
-
-        if (active) {
-          setUserName("Utilisateur");
-          setUserRole("");
-        }
       } finally {
         if (active) {
           setLoadingUser(false);
@@ -105,7 +106,6 @@ export default function Header({ onMenuClick }) {
   return (
     <header className="sticky top-0 z-30 flex h-[88px] items-center justify-between border-b border-gray-100 bg-white px-4 shadow-sm sm:px-6 lg:px-8">
       {/* GAUCHE */}
-
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
@@ -121,8 +121,12 @@ export default function Header({ onMenuClick }) {
         </div>
 
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-bold text-[#17243A] sm:text-base">
-            Kiosque - PAMYA Lavage Auto - Daloa, 2ème rue Fadiga
+          <h2 className="truncate text-base font-bold text-[#17243A] sm:text-xl">
+            {!mounted || loadingUser
+              ? "Chargement du kiosque..."
+              : kioskName
+                ? `Bienvenue chez - ${kioskName}`
+                : "MonKiosk"}
           </h2>
 
           <div className="mt-0.5 flex items-center gap-1.5">
@@ -135,10 +139,8 @@ export default function Header({ onMenuClick }) {
       </div>
 
       {/* DROITE */}
-
       <div className="ml-3 flex shrink-0 items-center gap-2 sm:gap-4">
         {/* Notifications */}
-
         <button
           type="button"
           className="relative flex h-10 w-10 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-50"
@@ -154,21 +156,16 @@ export default function Header({ onMenuClick }) {
         <div className="hidden h-8 w-px bg-gray-200 sm:block" />
 
         {/* UTILISATEUR */}
-
         <button
           type="button"
           className="flex items-center gap-2 rounded-xl p-1.5 transition hover:bg-gray-50 sm:gap-3"
           aria-label="Profil utilisateur"
         >
-          {/* Avatar avec initiales dynamiques */}
-
           <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#D9E1E8]">
             <span className="text-xs font-bold text-[#40505E]">
               {loadingUser ? "..." : initials || "U"}
             </span>
           </div>
-
-          {/* Nom et rôle provenant de public.users */}
 
           <div className="hidden max-w-[180px] text-left sm:block">
             <p className="truncate text-sm font-bold leading-5 text-[#17243A]">

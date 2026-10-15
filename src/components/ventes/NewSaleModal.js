@@ -27,10 +27,13 @@ const formatMoney = (value) =>
 
 const PAYMENT_OPTIONS = [
   { value: "especes", label: "Espèces" },
-  { value: "mobile_money", label: "Mobile Money" },
+  { value: "wave", label: "Wave" },
+  { value: "orange_money", label: "Orange Money" },
+  { value: "mtn_money", label: "MTN Money" },
+  { value: "moov_money", label: "Moov Money" },
   { value: "carte", label: "Carte bancaire" },
-  { value: "virement", label: "Virement" },
-  { value: "credit", label: "Crédit" },
+  { value: "virement", label: "Virement bancaire" },
+  { value: "autre", label: "Autre" },
 ];
 
 export default function NewSaleModal({
