@@ -681,8 +681,9 @@ export default function UtilisateursPage() {
 
           <button
             type="button"
-            onClick={openCreateModal}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            disabled
+            className="inline-flex cursor-not-allowed items-center gap-2 rounded-xl bg-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-500 opacity-70"
+            title="Création d'utilisateurs temporairement désactivée"
           >
             <UserPlus size={18} />
             Nouvel utilisateur
