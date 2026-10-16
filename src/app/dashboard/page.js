@@ -499,20 +499,33 @@ export default function DashboardPage() {
         return;
       }
       
+            
       const user = session.user;
 
-      const { data: kiosk, error: kioskError } = await supabase
-        .from("kiosques")
-        .select("id, nom, devise")
-        .eq("owner_id", user.id)
-        .eq("actif", true)
-        .maybeSingle();
+      // Récupérer le kiosque associé au compte connecté.
+      // Cette méthode fonctionne pour le propriétaire et le caissier.
+      const kioskResponse = await fetch("/api/admin/users?action=kiosk", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "same-origin",
+      });
 
-      if (kioskError) throw kioskError;
+      const kioskResult = await kioskResponse.json();
 
-      if (!kiosk) {
-        throw new Error("Aucun kiosque actif trouvé.");
+      if (!kioskResponse.ok) {
+        throw new Error(
+          kioskResult.error || "Impossible de récupérer le kiosque associé au compte."
+        );
       }
+
+      const kiosk = kioskResult.kiosk;
+
+      if (!kiosk?.id) {
+        throw new Error(
+          "Aucun kiosque associé à ce compte. Vérifiez le profil utilisateur."
+        );
+      }
+
 
 
       let query = supabase
@@ -831,7 +844,7 @@ export default function DashboardPage() {
             </div>
 
             <p className="mt-2 text-sm text-gray-600 sm:text-base">
-              Voici un aperçu de l'activité de votre kiosque.
+              Voici un aperçu de l'activité de votre business.
             </p>
 
             <div className="mt-5 inline-flex flex-wrap items-center gap-2 rounded-full bg-[#FFE4D3] px-4 py-2 text-xs font-semibold text-gray-700">

@@ -1,7 +1,9 @@
+
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
 import {
   Store,
   Users,
@@ -11,8 +13,8 @@ import {
   ShieldCheck,
   CheckCircle2,
   XCircle,
+  LogOut,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase/client";
 
 const champ =
   "mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20";
@@ -23,6 +25,7 @@ export default function SuperAdminPage() {
   const [kiosques, setKiosques] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -33,77 +36,99 @@ export default function SuperAdminPage() {
   const [motDePasse, setMotDePasse] = useState("");
   const [devise, setDevise] = useState("FCFA");
 
-  
-const chargerKiosques = useCallback(async () => {
-  setLoading(true);
-  setError("");
+  // Déconnexion du super-administrateur.
+  async function handleLogout() {
+    if (loggingOut) return;
 
-  try {
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError) throw sessionError;
-
-    if (!session) {
-      router.replace("/login");
-      return;
-    }
-
-    const response = await fetch("/api/super-admin/kiosques", {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    });
-
-    // Lire le corps de la réponse une seule fois.
-    const contenu = await response.text();
-
-    let result;
+    setLoggingOut(true);
+    setError("");
 
     try {
-      result = contenu ? JSON.parse(contenu) : {};
-    } catch {
-      console.error("Réponse non JSON de l'API :", contenu);
-      throw new Error(
-        "Le serveur a renvoyé une réponse invalide. Vérifie le terminal Next.js."
-      );
-    }
+      const { error: logoutError } = await supabase.auth.signOut();
 
-    if (response.status === 401) {
-      await supabase.auth.signOut();
+      if (logoutError) {
+        throw logoutError;
+      }
+
       router.replace("/login");
-      return;
+      router.refresh();
+    } catch (err) {
+      console.error("Erreur de déconnexion :", err);
+      setError("La déconnexion a échoué. Veuillez réessayer.");
+      setLoggingOut(false);
     }
-
-    if (response.status === 403) {
-      throw new Error(
-        result.error || "Accès réservé au super-utilisateur."
-      );
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        result.error || "Impossible de charger les kiosques."
-      );
-    }
-
-    setKiosques(result.kiosques || []);
-  } catch (err) {
-    console.error("Erreur chargement kiosques :", err);
-    setError(err.message || "Impossible de charger les kiosques.");
-  } finally {
-    setLoading(false);
   }
-}, [router]);
 
+  // Charger les kiosques depuis l'API sécurisée.
+  const chargerKiosques = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) throw sessionError;
+
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      const response = await fetch("/api/super-admin/kiosques", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        cache: "no-store",
+      });
+
+      const contenu = await response.text();
+      let result;
+
+      try {
+        result = contenu ? JSON.parse(contenu) : {};
+      } catch {
+        console.error("Réponse non JSON de l'API :", contenu);
+        throw new Error(
+          "Le serveur a renvoyé une réponse invalide. Vérifie le terminal Next.js."
+        );
+      }
+
+      if (response.status === 401) {
+        await supabase.auth.signOut();
+        router.replace("/login");
+        return;
+      }
+
+      if (response.status === 403) {
+        throw new Error(
+          result.error || "Accès réservé au super-utilisateur."
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || "Impossible de charger les kiosques."
+        );
+      }
+
+      setKiosques(result.kiosques || []);
+    } catch (err) {
+      console.error("Erreur chargement kiosques :", err);
+      setError(err.message || "Impossible de charger les kiosques.");
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
 
   useEffect(() => {
     chargerKiosques();
   }, [chargerKiosques]);
 
+  // Créer une structure et son propriétaire.
   async function creerKiosque(e) {
     e.preventDefault();
     setSaving(true);
@@ -117,7 +142,11 @@ const chargerKiosques = useCallback(async () => {
       } = await supabase.auth.getSession();
 
       if (sessionError) throw sessionError;
-      if (!session) throw new Error("Connecte-toi à nouveau.");
+
+      if (!session) {
+        router.replace("/login");
+        throw new Error("Session expirée. Connecte-toi à nouveau.");
+      }
 
       const response = await fetch("/api/super-admin/kiosques", {
         method: "POST",
@@ -135,7 +164,20 @@ const chargerKiosques = useCallback(async () => {
         }),
       });
 
-      const result = await response.json();
+      const contenu = await response.text();
+      let result;
+
+      try {
+        result = contenu ? JSON.parse(contenu) : {};
+      } catch {
+        throw new Error("Réponse invalide du serveur.");
+      }
+
+      if (response.status === 401) {
+        await supabase.auth.signOut();
+        router.replace("/login");
+        throw new Error("Session expirée. Connecte-toi à nouveau.");
+      }
 
       if (!response.ok) {
         throw new Error(result.error || "Création impossible.");
@@ -154,6 +196,7 @@ const chargerKiosques = useCallback(async () => {
 
       await chargerKiosques();
     } catch (err) {
+      console.error("Erreur création kiosque :", err);
       setError(err.message || "Impossible de créer le kiosque.");
     } finally {
       setSaving(false);
@@ -165,43 +208,72 @@ const chargerKiosques = useCallback(async () => {
   return (
     <main className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-8">
+        {/* En-tête */}
         <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-700">
               <ShieldCheck className="h-4 w-4" />
               Administration sécurisée
             </div>
+
             <h1 className="text-3xl font-bold tracking-tight text-[#14233B]">
               Super-administration
             </h1>
+
             <p className="mt-2 text-sm text-slate-500">
               Gère les kiosques et les comptes de leurs propriétaires.
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={chargerKiosques}
-            disabled={loading}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Actualiser
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={chargerKiosques}
+              disabled={loading || loggingOut}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+              />
+              Actualiser
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loggingOut ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogOut className="h-4 w-4" />
+              )}
+              {loggingOut ? "Déconnexion..." : "Déconnexion"}
+            </button>
+          </div>
         </header>
 
+        {/* Messages */}
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <div
+            role="alert"
+            className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          >
             {error}
           </div>
         )}
 
         {success && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <div
+            role="status"
+            className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"
+          >
             {success}
           </div>
         )}
 
+        {/* Indicateurs */}
         <section className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
@@ -236,6 +308,7 @@ const chargerKiosques = useCallback(async () => {
           </div>
         </section>
 
+        {/* Formulaire et liste */}
         <section className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <form
             onSubmit={creerKiosque}
@@ -245,9 +318,11 @@ const chargerKiosques = useCallback(async () => {
               <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
                 <Plus className="h-5 w-5" />
               </div>
+
               <h2 className="text-xl font-bold text-[#14233B]">
                 Créer une structure
               </h2>
+
               <p className="mt-1 text-sm text-slate-500">
                 Le compte propriétaire sera créé en même temps.
               </p>
@@ -260,6 +335,7 @@ const chargerKiosques = useCallback(async () => {
                 value={nomKiosque}
                 onChange={(e) => setNomKiosque(e.target.value)}
                 placeholder="Ex. : Kiosque à café du Plateau"
+                autoComplete="organization"
                 required
               />
             </label>
@@ -271,6 +347,7 @@ const chargerKiosques = useCallback(async () => {
                 value={nomProprietaire}
                 onChange={(e) => setNomProprietaire(e.target.value)}
                 placeholder="Nom et prénoms"
+                autoComplete="name"
                 required
               />
             </label>
@@ -284,14 +361,15 @@ const chargerKiosques = useCallback(async () => {
                 onChange={(e) => setWhatsapp(e.target.value)}
                 placeholder="0700000000 ou +2250700000000"
                 title="Exemple : +2250700000000"
+                autoComplete="tel"
                 required
               />
               <span className="mt-1 block text-xs font-normal text-slate-500">
-                Numéro ivoirien à 10 chiffres ou numéro international avec indicatif.
+                Numéro ivoirien à 10 chiffres ou numéro international avec
+                indicatif.
               </span>
             </label>
 
-            
             <label className="block text-sm font-semibold text-slate-700">
               Adresse e-mail du propriétaire
               <input
@@ -303,10 +381,10 @@ const chargerKiosques = useCallback(async () => {
                 autoComplete="email"
               />
               <span className="mt-1 block text-xs font-normal text-slate-500">
-                Facultatif. Cette adresse sera associée au compte du propriétaire.
+                Facultatif. Cette adresse sera associée au compte du
+                propriétaire.
               </span>
             </label>
-
 
             <label className="block text-sm font-semibold text-slate-700">
               Mot de passe initial *
@@ -335,7 +413,7 @@ const chargerKiosques = useCallback(async () => {
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || loggingOut}
               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#14233B] px-4 font-semibold text-white transition hover:bg-[#203653] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? (
@@ -352,6 +430,7 @@ const chargerKiosques = useCallback(async () => {
             </button>
           </form>
 
+          {/* Liste des kiosques */}
           <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
             <div className="border-b border-slate-100 p-5 sm:p-6">
               <h2 className="text-xl font-bold text-[#14233B]">
@@ -380,13 +459,21 @@ const chargerKiosques = useCallback(async () => {
                         <h3 className="break-words font-bold text-[#14233B]">
                           {kiosque.nom}
                         </h3>
+
                         <p className="mt-1 text-sm text-slate-500">
                           {kiosque.proprietaire?.nom ||
                             "Propriétaire non disponible"}
                         </p>
+
                         {kiosque.proprietaire?.whatsapp && (
                           <p className="mt-1 text-xs text-slate-500">
                             {kiosque.proprietaire.whatsapp}
+                          </p>
+                        )}
+
+                        {kiosque.proprietaire?.email && (
+                          <p className="mt-1 break-all text-xs text-slate-500">
+                            {kiosque.proprietaire.email}
                           </p>
                         )}
                       </div>
@@ -407,7 +494,7 @@ const chargerKiosques = useCallback(async () => {
                       </span>
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-400">
                       <span>Devise : {kiosque.devise || "FCFA"}</span>
                       <span>{kiosque.id.slice(0, 8)}…</span>
                     </div>

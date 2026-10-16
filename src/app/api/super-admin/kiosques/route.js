@@ -260,6 +260,49 @@ export async function POST(request) {
 
     if (kioskError) throw kioskError;
 
+    // 3. Associer le kiosque au profil du propriétaire.
+    const { data: profilRattache, error: rattachementError } =
+      await adminClient
+        .from("users")
+        .update({
+          kiosque_id: kiosque.id,
+        })
+        .eq("id", nouvelUtilisateurId)
+        .select("id, kiosque_id")
+        .single();
+
+    if (rattachementError) {
+      console.error(
+        "Erreur de rattachement du propriétaire au kiosque :",
+        rattachementError.message
+      );
+
+      throw rattachementError;
+    }
+
+    // Vérifier que le rattachement est effectif.
+    if (!profilRattache || profilRattache.kiosque_id !== kiosque.id) {
+      throw new Error(
+        "Le kiosque créé n'est pas correctement associé au propriétaire."
+      );
+    }
+
+    if (rattachementError) {
+      console.error(
+        "Erreur de rattachement du propriétaire au kiosque :",
+        rattachementError.message
+      );
+
+      throw rattachementError;
+    }
+
+    // Vérifier que l'association a bien été enregistrée.
+    if (profilRattache.kiosque_id !== kiosque.id) {
+      throw new Error(
+        "La structure n'est pas correctement associée au propriétaire."
+      );
+    }
+
     return NextResponse.json(
       {
         message: "Kiosque et propriétaire créés avec succès.",

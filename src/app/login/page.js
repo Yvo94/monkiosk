@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Eye,
   EyeOff,
@@ -196,6 +197,17 @@ export default function LoginPage() {
                 </>
               )}
             </button>
+            
+            <div className="mt-6 text-center text-sm text-gray-600">
+              Vous n’avez pas encore de compte ?{" "}
+              <Link
+                href="/register"
+                className="font-semibold text-[#D9683C] transition hover:text-[#B94C24] hover:underline"
+              >
+                Créer un compte
+              </Link>
+            </div>
+
           </form>
 
           {/* Mention de sécurité */}
