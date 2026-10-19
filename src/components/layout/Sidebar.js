@@ -25,28 +25,16 @@ import {
 
 const menuItems = [
   { label: "Accueil", href: "/dashboard", icon: Home },
-  { label: "Produits", href: "/dashboard/produits", icon: Package },
   { label: "Catégories", href: "/dashboard/categories", icon: Tags },
+  { label: "Produits", href: "/dashboard/produits", icon: Package },
   { label: "Ventes", href: "/dashboard/ventes", icon: ShoppingCart },
   { label: "Achats", href: "/dashboard/achats", icon: ShoppingBag },
+  { label: "Dépenses", href: "/dashboard/depenses", icon: Receipt },
   { label: "Stock", href: "/dashboard/stock", icon: Boxes },
   { label: "Caisses", href: "/dashboard/caisse", icon: WalletCards },
-  { label: "Dépenses", href: "/dashboard/depenses", icon: Receipt },
-  {
-    label: "Statistiques",
-    href: "/dashboard/statistiques",
-    icon: BarChart3,
-  },
-  {
-    label: "Utilisateurs",
-    href: "/dashboard/utilisateurs",
-    icon: Users,
-  },
-  {
-    label: "Paramètres",
-    href: "/dashboard/parametres",
-    icon: Settings,
-  },
+  { label: "Statistiques", href: "/dashboard/statistiques", icon: BarChart3},
+  { label: "Utilisateurs", href: "/dashboard/utilisateurs", icon: Users},
+  { label: "Paramètres", href: "/dashboard/parametres", icon: Settings},
 ];
 
 export default function Sidebar({ open, onClose }) {

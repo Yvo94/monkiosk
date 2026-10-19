@@ -1,82 +1,138 @@
+
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
 function getClients() {
-  if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-    throw new Error("Configuration Supabase serveur incomplète.");
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const publishableKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !publishableKey || !serviceRoleKey) {
+    throw new Error("Configuration Supabase incomplète.");
   }
 
   return {
-    authClient: createClient(supabaseUrl, anonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
+    authClient: createClient(url, publishableKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
     }),
-    adminClient: createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
+    adminClient: createClient(url, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
     }),
   };
 }
 
-async function verifierSuperAdmin(request) {
-  const authorization = request.headers.get("authorization");
-  const token = authorization?.startsWith("Bearer ")
+async function verifierSuperAdmin(request, clients) {
+  const authorization = request.headers.get("authorization") || "";
+  const token = authorization.startsWith("Bearer ")
     ? authorization.slice(7)
-    : null;
+    : "";
 
   if (!token) {
-    return { error: "Connexion requise.", status: 401 };
+    return {
+      error: NextResponse.json(
+        { error: "Session manquante ou expirée." },
+        { status: 401 }
+      ),
+    };
   }
 
-  const { authClient, adminClient } = getClients();
+  const { data, error } = await clients.authClient.auth.getUser(token);
 
-  const {
-    data: { user },
-    error,
-  } = await authClient.auth.getUser(token);
-
-  if (error || !user) {
-    return { error: "Session invalide.", status: 401 };
+  if (error || !data?.user) {
+    return {
+      error: NextResponse.json(
+        { error: "Session invalide. Reconnecte-toi." },
+        { status: 401 }
+      ),
+    };
   }
 
-  const { data: role, error: roleError } = await adminClient
+  const { data: role, error: roleError } = await clients.adminClient
     .from("monkiosk_user_roles")
     .select("role")
-    .eq("user_id", user.id)
+    .eq("user_id", data.user.id)
+    .eq("role", "super_admin")
     .maybeSingle();
 
   if (roleError) {
-    console.error("Vérification du rôle :", roleError);
-    return { error: "Impossible de vérifier les droits.", status: 500 };
+    console.error("Vérification du rôle impossible :", roleError);
+    return {
+      error: NextResponse.json(
+        { error: "Impossible de vérifier les autorisations." },
+        { status: 500 }
+      ),
+    };
   }
 
-  if (role?.role !== "super_admin") {
-    return { error: "Accès réservé au super-utilisateur.", status: 403 };
+  if (!role) {
+    return {
+      error: NextResponse.json(
+        { error: "Accès réservé au super-administrateur." },
+        { status: 403 }
+      ),
+    };
   }
 
-  return { user, adminClient };
+  return { user: data.user, adminClient: clients.adminClient };
+}
+
+async function obtenirStatistiques(adminClient, kiosqueId) {
+  const { data, error } = await adminClient.rpc(
+    "superadmin_kiosque_stats",
+    { p_kiosque_id: kiosqueId }
+  );
+
+  if (error) {
+    console.error("Erreur statistiques kiosque :", error);
+    throw new Error(
+      "Impossible de calculer les statistiques. Vérifie la fonction SQL superadmin_kiosque_stats."
+    );
+  }
+
+  const lignes = data || [];
+
+  return {
+    totalEnregistrements: lignes.reduce(
+      (total, ligne) => total + Number(ligne.record_count || 0),
+      0
+    ),
+    tailleEstimeeOctets: lignes.reduce(
+      (total, ligne) => total + Number(ligne.estimated_bytes || 0),
+      0
+    ),
+    details: lignes.map((ligne) => ({
+      table: ligne.table_name,
+      enregistrements: Number(ligne.record_count || 0),
+      octets: Number(ligne.estimated_bytes || 0),
+    })),
+  };
+}
+
+function formaterProprietaire(profil, authUser) {
+  const metadata = authUser?.user_metadata || {};
+
+  return {
+    id: profil?.id || authUser?.id || null,
+    nom: profil?.nom || metadata.full_name || "",
+    whatsapp:
+      profil?.telephone ||
+      metadata.whatsapp ||
+      authUser?.phone ||
+      "",
+    email: profil?.email || profil?.auth_email || authUser?.email || "",
+  };
 }
 
 export async function GET(request) {
   try {
-    const result = await verifierSuperAdmin(request);
+    const clients = getClients();
+    const verification = await verifierSuperAdmin(request, clients);
 
-    if (result.error) {
-      return NextResponse.json(
-        { error: result.error },
-        { status: result.status }
-      );
-    }
+    if (verification.error) return verification.error;
 
-    const { adminClient } = result;
+    const { adminClient } = verification;
 
     const { data: kiosques, error } = await adminClient
       .from("kiosques")
@@ -85,90 +141,83 @@ export async function GET(request) {
 
     if (error) throw error;
 
-    const proprietaires = await Promise.all(
+    const resultat = await Promise.all(
       (kiosques || []).map(async (kiosque) => {
-        const { data } = await adminClient.auth.admin.getUserById(
-          kiosque.owner_id
-        );
+        let profil = null;
+        let authUser = null;
 
-        const proprietaire = data?.user;
+        if (kiosque.owner_id) {
+          const [profilResult, authResult] = await Promise.all([
+            adminClient
+              .from("users")
+              .select("id, nom, email, auth_email, telephone")
+              .eq("id", kiosque.owner_id)
+              .maybeSingle(),
+            adminClient.auth.admin.getUserById(kiosque.owner_id),
+          ]);
+
+          if (profilResult.error) throw profilResult.error;
+          profil = profilResult.data;
+          authUser = authResult.data?.user || null;
+        }
+
+        let statistiques;
+
+        try {
+          statistiques = await obtenirStatistiques(adminClient, kiosque.id);
+        } catch (err) {
+          // Ne pas présenter une statistique indisponible comme un zéro.
+          statistiques = {
+            totalEnregistrements: null,
+            tailleEstimeeOctets: null,
+            details: [],
+            erreur: err.message,
+          };
+        }
 
         return {
           ...kiosque,
-          proprietaire: proprietaire
-            ? {
-                nom:
-                  proprietaire.user_metadata?.full_name ||
-                  proprietaire.phone ||
-                  proprietaire.email ||
-                  "Propriétaire",
-                whatsapp:
-                  proprietaire.user_metadata?.whatsapp ||
-                  proprietaire.phone ||
-                  "",
-                email: proprietaire.email || "",
-              }
-            : null,
+          proprietaire: formaterProprietaire(profil, authUser),
+          statistiques,
         };
       })
     );
 
-    return NextResponse.json({ kiosques: proprietaires });
+    return NextResponse.json({ kiosques: resultat });
   } catch (error) {
-    console.error("Liste des kiosques :", error);
+    console.error("GET /api/super-admin/kiosques :", error);
+
     return NextResponse.json(
-      { error: error.message || "Erreur serveur." },
+      { error: error.message || "Impossible de charger les structures." },
       { status: 500 }
     );
   }
 }
 
 export async function POST(request) {
-  let adminClient;
+  let clients;
   let nouvelUtilisateurId = null;
+  let nouveauKiosqueId = null;
 
   try {
-    const result = await verifierSuperAdmin(request);
+    clients = getClients();
 
-    if (result.error) {
-      return NextResponse.json(
-        { error: result.error },
-        { status: result.status }
-      );
-    }
+    const verification = await verifierSuperAdmin(request, clients);
+    if (verification.error) return verification.error;
 
-    adminClient = result.adminClient;
-
+    const { adminClient } = verification;
     const body = await request.json();
+
     const nomKiosque = String(body.nomKiosque || "").trim();
     const nomProprietaire = String(body.nomProprietaire || "").trim();
     const whatsappSaisi = String(body.whatsapp || "").trim();
-    const emailSaisi = String(body.email || "").trim();
-    const email = emailSaisi ? emailSaisi.toLowerCase() : null;
-
-    let whatsapp = whatsappSaisi.replace(/[\s().-]/g, "");
-
-    // Accepter les numéros ivoiriens locaux à 10 chiffres.
-    if (/^0\d{9}$/.test(whatsapp)) {
-      whatsapp = `+225${whatsapp}`;
-    }
-
-    // Accepter aussi les numéros ivoiriens saisis avec 225 sans le signe +.
-    if (/^225\d{10}$/.test(whatsapp)) {
-      whatsapp = `+${whatsapp}`;
-    }
-    const devise = String(body.devise || "FCFA").trim();
+    const email = String(body.email || "").trim().toLowerCase();
     const motDePasse = String(body.motDePasse || "");
+    const devise = String(body.devise || "FCFA").trim();
 
-    if (
-      !nomKiosque ||
-      !nomProprietaire ||
-      !whatsapp ||
-      !email ||
-      !motDePasse
-    ) {
+    if (!nomKiosque || !nomProprietaire || !whatsappSaisi || !motDePasse) {
       return NextResponse.json(
-        { error: "Tous les champs obligatoires doivent être renseignés." },
+        { error: "Renseigne le nom de la structure, le propriétaire, WhatsApp et le mot de passe." },
         { status: 400 }
       );
     }
@@ -180,168 +229,151 @@ export async function POST(request) {
       );
     }
 
-    if (!/^\+[1-9]\d{7,14}$/.test(whatsapp)) {
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json(
+        { error: "L'adresse e-mail est invalide." },
+        { status: 400 }
+      );
+    }
+
+    let whatsapp = whatsappSaisi.replace(/[\s().-]/g, "");
+
+    if (/^0[157]\d{8}$/.test(whatsapp)) {
+      whatsapp = `+225${whatsapp}`;
+    } else if (/^2250[157]\d{8}$/.test(whatsapp)) {
+      whatsapp = `+${whatsapp}`;
+    } else if (/^225[157]\d{7}$/.test(whatsapp)) {
+      whatsapp = `+${whatsapp}`;
+    } else if (/^\+[1-9]\d{7,14}$/.test(whatsapp)) {
+      // Numéro international déjà normalisé.
+    } else {
       return NextResponse.json(
         {
           error:
-            "Numéro invalide. Saisis un numéro ivoirien à 10 chiffres ou un numéro international, par exemple 0700000000 ou +2250700000000.",
+            "Numéro WhatsApp invalide. Utilise un numéro ivoirien à 10 chiffres ou un numéro international.",
         },
         { status: 400 }
       );
     }
 
-    if (!["FCFA"].includes(devise)) {
+    if (devise !== "FCFA") {
       return NextResponse.json(
-        { error: "Devise non prise en charge." },
+        { error: "La devise actuellement prise en charge est FCFA." },
         { status: 400 }
       );
     }
 
-    // Créer le compte propriétaire dans Supabase Auth.
-    const { data: authData, error: authError } =
+    // Une structure correspond à un seul compte propriétaire.
+    // Le numéro de téléphone sert d'identifiant de connexion.
+    const { data: created, error: createError } =
       await adminClient.auth.admin.createUser({
         phone: whatsapp,
         password: motDePasse,
         phone_confirm: true,
-        ...(email ? { email } : {}),
-        email_confirm: true,
+        ...(email ? { email, email_confirm: true } : {}),
         user_metadata: {
           full_name: nomProprietaire,
           whatsapp,
-          email,
+          ...(email ? { email } : {}),
         },
       });
 
-    if (authError) throw authError;
+    if (createError) throw createError;
+    nouvelUtilisateurId = created.user.id;
 
-    
-  nouvelUtilisateurId = authData.user.id;
-
-  // 1. Créer le profil utilisateur dans public.users
-  const { error: utilisateurError } = await adminClient
-    .from("users")
-    .insert({
+    const { error: profileError } = await adminClient.from("users").insert({
       id: nouvelUtilisateurId,
       nom: nomProprietaire,
-      email: email,
+      email: email || null,
+      auth_email: email || null,
       role: "admin",
       actif: true,
       telephone: whatsapp,
-      auth_email: email,
     });
 
-  if (utilisateurError) {
-    console.error("Erreur création public.users :", utilisateurError);
-    throw utilisateurError;
-  }
+    if (profileError) throw profileError;
 
-  // 2. Enregistrer le rôle de propriétaire MonKiosk
-  const { error: roleError } = await adminClient
-    .from("monkiosk_user_roles")
-    .insert({
-      user_id: nouvelUtilisateurId,
-      role: "owner",
-    });
+    const { error: roleError } = await adminClient
+      .from("monkiosk_user_roles")
+      .insert({
+        user_id: nouvelUtilisateurId,
+        role: "owner",
+      });
 
-  if (roleError) throw roleError;
+    if (roleError) throw roleError;
 
-
-    // Créer le kiosque.
     const { data: kiosque, error: kioskError } = await adminClient
       .from("kiosques")
       .insert({
         nom: nomKiosque,
         owner_id: nouvelUtilisateurId,
         actif: true,
-        devise,
+        devise: "FCFA",
       })
       .select("id, nom, owner_id, actif, devise")
       .single();
 
     if (kioskError) throw kioskError;
+    nouveauKiosqueId = kiosque.id;
 
-    // 3. Associer le kiosque au profil du propriétaire.
-    const { data: profilRattache, error: rattachementError } =
-      await adminClient
-        .from("users")
-        .update({
-          kiosque_id: kiosque.id,
-        })
-        .eq("id", nouvelUtilisateurId)
-        .select("id, kiosque_id")
-        .single();
+    const { error: associationError } = await adminClient
+      .from("users")
+      .update({ kiosque_id: kiosque.id })
+      .eq("id", nouvelUtilisateurId);
 
-    if (rattachementError) {
-      console.error(
-        "Erreur de rattachement du propriétaire au kiosque :",
-        rattachementError.message
-      );
-
-      throw rattachementError;
-    }
-
-    // Vérifier que le rattachement est effectif.
-    if (!profilRattache || profilRattache.kiosque_id !== kiosque.id) {
-      throw new Error(
-        "Le kiosque créé n'est pas correctement associé au propriétaire."
-      );
-    }
-
-    if (rattachementError) {
-      console.error(
-        "Erreur de rattachement du propriétaire au kiosque :",
-        rattachementError.message
-      );
-
-      throw rattachementError;
-    }
-
-    // Vérifier que l'association a bien été enregistrée.
-    if (profilRattache.kiosque_id !== kiosque.id) {
-      throw new Error(
-        "La structure n'est pas correctement associée au propriétaire."
-      );
-    }
+    if (associationError) throw associationError;
 
     return NextResponse.json(
       {
-        message: "Kiosque et propriétaire créés avec succès.",
-        kiosque,
+        message: "Structure créée avec succès.",
+        kiosque: {
+          ...kiosque,
+          proprietaire: {
+            id: nouvelUtilisateurId,
+            nom: nomProprietaire,
+            whatsapp,
+            email,
+          },
+          statistiques: {
+            totalEnregistrements: 0,
+            tailleEstimeeOctets: 0,
+            details: [],
+          },
+        },
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("Création kiosque :", error);
+    console.error("POST /api/super-admin/kiosques :", error);
 
-    // Éviter de laisser un compte orphelin si une étape échoue.
-    
-    if (adminClient && nouvelUtilisateurId) {
-      await adminClient
-        .from("kiosques")
-        .delete()
-        .eq("owner_id", nouvelUtilisateurId);
+    // Compensation en cas d'échec afin de ne pas laisser un compte
+    // partiellement créé. Les suppressions restent limitées aux objets
+    // créés par cette requête.
+    if (clients && nouvelUtilisateurId) {
+      if (nouveauKiosqueId) {
+        await clients.adminClient
+          .from("kiosques")
+          .delete()
+          .eq("id", nouveauKiosqueId);
+      }
 
-      await adminClient
+      await clients.adminClient
         .from("monkiosk_user_roles")
         .delete()
-        .eq("user_id", nouvelUtilisateurId);
+        .eq("user_id", nouvelUtilisateurId)
+        .eq("role", "owner");
 
-      await adminClient
-        .from("users")
-        .delete()
-        .eq("id", nouvelUtilisateurId);
+      await clients.adminClient.from("users").delete().eq("id", nouvelUtilisateurId);
 
-      await adminClient.auth.admin.deleteUser(nouvelUtilisateurId);
+      await clients.adminClient.auth.admin.deleteUser(nouvelUtilisateurId);
     }
 
+    const message = error.message || "Impossible de créer la structure.";
+    const status =
+      /already registered|already exists|duplicate key/i.test(message)
+        ? 409
+        : 500;
 
-    return NextResponse.json(
-      {
-        error:
-          error.message ||
-          "Impossible de créer le kiosque et son propriétaire.",
-      },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: message }, { status });
   }
 }

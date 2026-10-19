@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import NewSaleModal from "@/components/ventes/NewSaleModal";
+import NewProductModal from "@/components/produits/NewProductModal";
 import {
   ShoppingCart,
   Package,
@@ -97,7 +98,7 @@ const shortcuts = [
   },
   {
     title: "Nouveau produit",
-    href: "/dashboard/produits/nouveau",
+    action: "new-product",
     icon: Package,
     color: "bg-blue-500",
   },
@@ -326,7 +327,7 @@ function RecentSales({ sales }) {
 ============================================================ */
 
 
-function QuickActions({ onNewSale }) {
+function QuickActions({ onNewSale, onNewProduct }) {
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-5">
       <h2 className="text-lg font-bold text-gray-900">
@@ -337,13 +338,19 @@ function QuickActions({ onNewSale }) {
         {shortcuts.map((shortcut) => {
           const Icon = shortcut.icon;
 
-          if (shortcut.action === "new-sale") {
+          if (
+            shortcut.action === "new-sale" ||
+            shortcut.action === "new-product"
+          ) {
+            const isProduct = shortcut.action === "new-product";
+            const handleClick = isProduct ? onNewProduct : onNewSale;
+
             return (
               <button
                 key={shortcut.title}
                 type="button"
-                onClick={onNewSale}
-                className="flex flex-col items-center gap-3 rounded-xl border border-gray-100 p-4 text-center transition hover:border-emerald-300 hover:bg-emerald-50"
+                onClick={handleClick}
+                className="flex flex-col items-center gap-3 rounded-xl border border-gray-100 p-4 text-center transition hover:border-gray-200 hover:bg-gray-50"
               >
                 <span
                   className={`flex h-11 w-11 items-center justify-center rounded-xl text-white ${shortcut.color}`}
@@ -460,6 +467,8 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState("votre kiosque");
   const [currentDate, setCurrentDate] = useState(null);
   const [newSaleOpen, setNewSaleOpen] = useState(false);
+  const [newProductOpen, setNewProductOpen] = useState(false);
+
   useEffect(() => {
   setCurrentDate(new Date());
   }, []);
@@ -923,13 +932,23 @@ export default function DashboardPage() {
               : "xl:grid-cols-[1.55fr_1fr]"
           }`}
         >
-          <QuickActions onNewSale={() => setNewSaleOpen(true)} />
+          <QuickActions
+            onNewSale={() => setNewSaleOpen(true)}
+            onNewProduct={() => setNewProductOpen(true)}
+          />
 
           <NewSaleModal
             open={newSaleOpen}
             onClose={() => setNewSaleOpen(false)}
-            onSaved={loadDashboard}
+            onSaved={() => loadDashboard(true)}
           />
+
+          <NewProductModal
+            open={newProductOpen}
+            onClose={() => setNewProductOpen(false)}
+            onSaved={() => loadDashboard(true)}
+          />
+
           <StockAlert
             products={lowStock}
             dismissed={dismissed}

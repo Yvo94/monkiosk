@@ -214,11 +214,34 @@ export async function POST(request) {
     );
     }
 
+    // Créer la caisse principale du nouveau kiosque.
+    const { data: caissePrincipale, error: caisseError } = await admin
+      .from("kiosque_caisses")
+      .insert({
+        kiosque_id: kiosque.id,
+        code: "PRINCIPALE",
+        nom: "Caisse principale",
+        solde_initial: 0,
+        solde_actuel: 0,
+      })
+      .select("id, kiosque_id, code, nom, solde_initial, solde_actuel")
+      .single();
+
+    if (caisseError) {
+      console.error(
+        "Erreur de création de la caisse principale :",
+        caisseError.message
+      );
+
+      throw caisseError;
+    }
+
     return NextResponse.json(
       {
         success: true,
-        message: "Compte et structure créés avec succès.",
+        message: "Compte, structure et caisse principale créés avec succès.",
         kiosque,
+        caissePrincipale,
       },
       { status: 201 }
     );
