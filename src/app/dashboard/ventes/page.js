@@ -144,23 +144,27 @@ export default function VentesPage() {
         );
       }
 
-      const { data: kioskData, error: kioskError } = await supabase
-        .from("kiosques")
-        .select("id, nom, devise")
-        .eq("owner_id", user.id)
-        .eq("actif", true)
-        .maybeSingle();
+      // Récupérer le profil et le kiosque via la route API sécurisée.
+      const response = await fetch("/api/admin/users?action=kiosk", {
+        method: "GET",
+        cache: "no-store",
+      });
 
-      if (kioskError) throw kioskError;
+      const result = await response.json();
 
-      console.log("Utilisateur connecté :", user.id);
-      console.log("Kiosque chargé :", kioskData?.id);
+      if (!response.ok) {
+        throw new Error(
+          result.error || "Impossible de récupérer le kiosque."
+        );
+      }
 
-      if (!kioskData) {
+      if (!result.kiosk?.id) {
         throw new Error(
           "Aucun kiosque actif n'est associé à votre compte."
         );
       }
+
+      const kioskData = result.kiosk;
 
       setKiosk(kioskData);
 
@@ -594,7 +598,7 @@ export default function VentesPage() {
   ============================================================ */
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 pb-10 sm:px-6 lg:px-8">
       {/* En-tête */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>

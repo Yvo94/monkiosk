@@ -21,11 +21,15 @@ export default function Header({ onMenuClick }) {
   useEffect(() => {
     setMounted(true);
   }, []);
+  
   useEffect(() => {
     let active = true;
 
     const loadUserProfile = async () => {
       try {
+        setLoadingUser(true);
+
+        // 1. Vérifier la session
         const {
           data: { session },
           error: sessionError,
@@ -42,46 +46,36 @@ export default function Header({ onMenuClick }) {
           return;
         }
 
-        const user = session.user;
+        // 2. Récupérer le profil et le kiosque via l'API sécurisée
+        const response = await fetch("/api/admin/users?action=kiosk", {
+          method: "GET",
+          cache: "no-store",
+        });
 
-        // 1. Charger le profil utilisateur
-        let query = supabase
-          .from("users")
-          .select("nom, role")
-          .eq("id", user.id);
+        const result = await response.json();
 
-        const {
-          data: profile,
-          error: profileError,
-        } = await query.maybeSingle();
-
-        if (profileError) throw profileError;
-
-        if (active) {
-          setUserName(profile?.nom?.trim() || "Utilisateur");
-          setUserRole(profile?.role || "");
+        if (!response.ok) {
+          throw new Error(
+            result.error || "Impossible de récupérer le profil utilisateur."
+          );
         }
 
-        // 2. Charger le kiosque associé au propriétaire connecté
-        const {
-          data: kiosque,
-          error: kiosqueError,
-        } = await supabase
-          .from("kiosques")
-          .select("nom")
-          .eq("owner_id", user.id)
-          .maybeSingle();
-
-        if (kiosqueError) throw kiosqueError;
-
         if (active) {
-          setKioskName(kiosque?.nom?.trim() || "");
+          setUserName(result.user?.nom?.trim() || "Utilisateur");
+          setUserRole(result.user?.role || "");
+          setKioskName(result.kiosk?.nom?.trim() || "");
         }
       } catch (error) {
         console.error(
-          "Erreur de récupération des informations :",
+          "Erreur de récupération des informations du header :",
           error
         );
+
+        if (active) {
+          setUserName("Utilisateur");
+          setUserRole("");
+          setKioskName("");
+        }
       } finally {
         if (active) {
           setLoadingUser(false);
@@ -95,6 +89,7 @@ export default function Header({ onMenuClick }) {
       active = false;
     };
   }, []);
+
 
   const initials = userName
     .split(/\s+/)

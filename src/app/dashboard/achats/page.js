@@ -110,6 +110,7 @@ export default function AchatsPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
+  
   const loadAchats = useCallback(async (refresh = false) => {
     if (refresh) {
       setRefreshing(true);
@@ -132,34 +133,43 @@ export default function AchatsPage() {
         return;
       }
 
-      const user = session.user;
+      // Récupérer le kiosque associé à l'utilisateur connecté
+      const response = await fetch("/api/admin/users?action=kiosk", {
+        method: "GET",
+        cache: "no-store",
+      });
 
-      const { data: kiosk, error: kioskError } = await supabase
-        .from("kiosques")
-        .select("id, nom, devise")
-        .eq("owner_id", user.id)
-        .eq("actif", true)
-        .maybeSingle();
+      const result = await response.json();
 
-      if (kioskError) throw kioskError;
-
-      if (!kiosk) {
-        throw new Error("Aucun kiosque actif trouvé.");
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            "Impossible de récupérer le kiosque associé."
+        );
       }
 
+      const kioskData = result.kiosk;
+
+      if (!kioskData?.id) {
+        throw new Error(
+          "Aucun kiosque actif n'est associé à votre compte."
+        );
+      }
+
+      // Charger les achats et les fournisseurs du kiosque
       const [achatsResult, fournisseursResult] = await Promise.all([
         supabase
           .from("kiosque_achats")
           .select(
             "id, kiosque_id, fournisseur_id, numero, date_achat, statut, montant_total, montant_paye, notes, created_at"
           )
-          .eq("kiosque_id", kiosk.id)
+          .eq("kiosque_id", kioskData.id)
           .order("date_achat", { ascending: false }),
 
         supabase
           .from("kiosque_fournisseurs")
           .select("id, nom, telephone, whatsapp")
-          .eq("kiosque_id", kiosk.id)
+          .eq("kiosque_id", kioskData.id)
           .eq("actif", true)
           .order("nom", { ascending: true }),
       ]);
@@ -171,12 +181,15 @@ export default function AchatsPage() {
       setFournisseurs(fournisseursResult.data || []);
     } catch (err) {
       console.error("Erreur chargement des achats :", err);
-      setError(err?.message || "Impossible de charger les achats.");
+      setError(
+        err?.message || "Impossible de charger les achats."
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
+
 
   useEffect(() => {
     loadAchats();

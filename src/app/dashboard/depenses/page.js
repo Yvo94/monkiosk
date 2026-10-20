@@ -172,14 +172,20 @@ export default function DepensesPage() {
         return false;
       }
 
-      const { data: kioskData, error: kioskError } = await supabase
-        .from("kiosques")
-        .select("id, nom, devise")
-        .eq("owner_id", session.user.id)
-        .eq("actif", true)
-        .maybeSingle();
+      const response = await fetch("/api/admin/users?action=kiosk", {
+        method: "GET",
+        cache: "no-store",
+      });
 
-      if (kioskError) throw kioskError;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || "Impossible de récupérer le kiosque."
+        );
+      }
+
+      const kioskData = result.kiosk;
 
       if (!kioskData) {
         setKiosk(null);

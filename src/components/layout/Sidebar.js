@@ -209,82 +209,82 @@ export default function Sidebar({ open, onClose }) {
           ) : (
             <div className="space-y-1.5">
               
-{visibleMenuItems.map((item) => {
-  const Icon = item.icon;
-  const active = isActive(item.href);
-  const locked =
-    role === "caissier" && item.href !== "/dashboard/ventes";
+              {visibleMenuItems.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.href);
+                const locked =
+                  role === "caissierr" && item.href !== "/dashboard/ventes";
 
-  const menuClassName = `
-    group relative flex h-11 items-center gap-3
-    overflow-hidden rounded-xl px-3.5
-    text-sm font-medium transition-all duration-200
-    ${
-      locked
-        ? "cursor-not-allowed text-slate-500 opacity-50"
-        : active
-          ? "bg-[#D9A45B]/15 text-[#F1C98F]"
-          : "text-slate-300 hover:bg-white/[0.07] hover:text-white"
-    }
-  `;
+                const menuClassName = `
+                  group relative flex h-11 items-center gap-3
+                  overflow-hidden rounded-xl px-3.5
+                  text-sm font-medium transition-all duration-200
+                  ${
+                    locked
+                      ? "cursor-not-allowed text-slate-500 opacity-50"
+                      : active
+                        ? "bg-[#D9A45B]/15 text-[#F1C98F]"
+                        : "text-slate-300 hover:bg-white/[0.07] hover:text-white"
+                  }
+                `;
 
-  const content = (
-    <>
-      {active && !locked && (
-        <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-[#D9A45B]" />
-      )}
+                const content = (
+                  <>
+                    {active && !locked && (
+                      <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-[#D9A45B]" />
+                    )}
 
-      <Icon
-        className={`
-          h-[19px] w-[19px] shrink-0 transition-colors
-          ${
-            locked
-              ? "text-slate-500"
-              : active
-                ? "text-[#D9A45B]"
-                : "text-slate-400 group-hover:text-slate-200"
-          }
-        `}
-        strokeWidth={1.8}
-      />
+                    <Icon
+                      className={`
+                        h-[19px] w-[19px] shrink-0 transition-colors
+                        ${
+                          locked
+                            ? "text-slate-500"
+                            : active
+                              ? "text-[#D9A45B]"
+                              : "text-slate-400 group-hover:text-slate-200"
+                        }
+                      `}
+                      strokeWidth={1.8}
+                    />
 
-      <span>{item.label}</span>
+                    <span>{item.label}</span>
 
-      {locked ? (
-        <span className="ml-auto text-slate-500" title="Accès réservé">
-          <LockKeyhole className="h-4 w-4" />
-        </span>
-      ) : active ? (
-        <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#D9A45B]" />
-      ) : null}
-    </>
-  );
+                    {locked ? (
+                      <span className="ml-auto text-slate-500" title="Accès réservé">
+                        <LockKeyhole className="h-4 w-4" />
+                      </span>
+                    ) : active ? (
+                      <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#D9A45B]" />
+                    ) : null}
+                  </>
+                );
 
-  if (locked) {
-    return (
-      <div
-        key={item.href}
-        aria-disabled="true"
-        title="Ce module n'est pas accessible avec votre profil."
-        className={menuClassName}
-      >
-        {content}
-      </div>
-    );
-  }
+                if (locked) {
+                  return (
+                    <div
+                      key={item.href}
+                      aria-disabled="true"
+                      title="Ce module n'est pas accessible avec votre profil."
+                      className={menuClassName}
+                    >
+                      {content}
+                    </div>
+                  );
+                }
 
-  return (
-    <Link
-      key={item.href}
-      href={item.href}
-      onClick={onClose}
-      aria-current={active ? "page" : undefined}
-      className={menuClassName}
-    >
-      {content}
-    </Link>
-  );
-})}
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onClose}
+                    aria-current={active ? "page" : undefined}
+                    className={menuClassName}
+                  >
+                    {content}
+                  </Link>
+                );
+              })}
 
             </div>
           )}

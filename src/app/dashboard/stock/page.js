@@ -134,22 +134,35 @@ export default function StockPage() {
         );
       }
 
-      const { data: kioskData, error: kioskError } = await supabase
-        .from("kiosques")
-        .select("id, nom, devise")
-        .eq("owner_id", user.id)
-        .eq("actif", true)
-        .maybeSingle();
+      
+      const response = await fetch("/api/admin/users?action=kiosk", {
+        method: "GET",
+        cache: "no-store",
+      });
 
-      if (kioskError) throw kioskError;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || "Impossible de récupérer le kiosque."
+        );
+      }
+
+      const kioskData = result.kiosk;
 
       if (!kioskData) {
+        setKiosk(null);
+        setProducts([]);
+        setCategories([]);
+        setMovements([]);
+
         throw new Error(
           "Aucun kiosque actif n'est associé à votre compte."
         );
       }
 
       setKiosk(kioskData);
+
 
       const [
         productsResult,

@@ -535,6 +535,37 @@ export default function DashboardPage() {
         );
       }
 
+      
+      const { data: authResult, error: authError } =
+        await supabase.auth.getUser();
+
+      const authId = authResult?.user?.id;
+
+      const { data: diagnosticProfile, error: profileDiagnosticError } =
+        await supabase
+          .from("users")
+          .select("id, nom, role, kiosque_id, actif")
+          .eq("id", authId)
+          .maybeSingle();
+
+      const { data: permissionResult, error: permissionError } =
+        await supabase.rpc("maax_a_le_droit", {
+          p_kiosque_id: kiosk.id,
+          p_module: "ventes",
+          p_action: "consulter",
+        });
+
+      const { data: diagnosticSales, error: diagnosticSalesError } =
+        await supabase
+          .from("kiosque_ventes")
+          .select("id, kiosque_id, statut, montant_total")
+          .eq("kiosque_id", kiosk.id);
+
+      const { data: salesByStatus, error: salesByStatusError } =
+        await supabase
+          .from("kiosque_ventes")
+          .select("statut")
+          .eq("kiosque_id", kiosk.id);
 
 
       let query = supabase
@@ -611,7 +642,6 @@ export default function DashboardPage() {
           .select("id, nom, stock_actuel, stock_minimum, unite, prix_vente")
           .eq("kiosque_id", kiosk.id)
           .eq("actif", true),
-
 
         
         supabase

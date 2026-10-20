@@ -678,7 +678,7 @@ export default function UtilisateursPage() {
             />
             Actualiser
           </button>
-
+          {/*
           <button
             type="button"
             disabled
@@ -688,6 +688,18 @@ export default function UtilisateursPage() {
             <UserPlus size={18} />
             Nouvel utilisateur
           </button>
+          */}
+          
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-amber-500/20"
+            title="Créer un nouvel utilisateur"
+          >
+            <UserPlus size={18} />
+            Nouvel utilisateur
+          </button>
+
         </div>
       </div>
 

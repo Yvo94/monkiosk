@@ -159,17 +159,22 @@ export default function StatistiquesPage() {
         return;
       }
 
-      const { data: kiosque, error: kiosqueError } = await supabase
-        .from("kiosques")
-        .select("id")
-        .eq("owner_id", user.id)
-        .eq("actif", true)
-        .limit(1)
-        .maybeSingle();
+      const response = await fetch("/api/admin/users?action=kiosk", {
+        method: "GET",
+        cache: "no-store",
+      });
 
-      if (kiosqueError) throw kiosqueError;
+      const result = await response.json();
 
-      if (!kiosque) {
+      if (!response.ok) {
+        throw new Error(
+          result.error || "Impossible de récupérer le kiosque."
+        );
+      }
+
+      const kiosque = result.kiosk;
+
+      if (!kiosque?.id) {
         setSales([]);
         setKiosqueId(null);
         setError("Aucun kiosque actif n'est associé à votre compte.");

@@ -36,6 +36,8 @@ export default function CategoriesPage() {
   });
 
   // Récupération du kiosque appartenant à l'utilisateur connecté
+  
+  // Récupération du kiosque associé à l'utilisateur connecté
   const loadKiosk = useCallback(async () => {
     const { data: sessionData, error: sessionError } =
       await supabase.auth.getSession();
@@ -50,27 +52,34 @@ export default function CategoriesPage() {
       );
     }
 
-    const { data: kiosk, error: kioskError } = await supabase
-      .from("kiosques")
-      .select("id, nom")
-      .eq("owner_id", authUser.id)
-      .eq("actif", true)
-      .limit(1)
-      .maybeSingle();
+    const response = await fetch("/api/admin/users?action=kiosk", {
+      method: "GET",
+      cache: "no-store",
+    });
 
-    if (kioskError) throw kioskError;
+    const result = await response.json();
 
-    if (!kiosk) {
+    if (!response.ok) {
       throw new Error(
-        "Aucun kiosque actif n'est associé à votre compte. Vérifiez le propriétaire dans la table kiosques."
+        result.error ||
+          "Impossible de récupérer le kiosque associé."
       );
     }
 
-    setKioskId(kiosk.id);
-    setKioskName(kiosk.nom || "Mon kiosque");
+    const kioskData = result.kiosk;
 
-    return kiosk.id;
+    if (!kioskData?.id) {
+      throw new Error(
+        "Aucun kiosque actif n'est associé à votre compte."
+      );
+    }
+
+    setKioskId(kioskData.id);
+    setKioskName(kioskData.nom || "Mon kiosque");
+
+    return kioskData.id;
   }, []);
+
 
   // Chargement des catégories du kiosque
   const loadCategories = useCallback(async (id) => {

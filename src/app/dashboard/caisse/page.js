@@ -168,17 +168,29 @@ export default function CaissePage() {
         return;
       }
 
-      const { data: kioskData, error: kioskError } = await supabase
-        .from("kiosques")
-        .select("id, nom, devise")
-        .eq("owner_id", session.user.id)
-        .eq("actif", true)
-        .maybeSingle();
+      const response = await fetch("/api/admin/users?action=kiosk", {
+        method: "GET",
+        cache: "no-store",
+      });
 
-      if (kioskError) throw kioskError;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || "Impossible de récupérer le kiosque."
+        );
+      }
+
+      const kioskData = result.kiosk;
 
       if (!kioskData) {
-        throw new Error("Aucun kiosque actif n'a été trouvé.");
+        setKiosk(null);
+        setCaisse(null);
+        setMovements([]);
+
+        throw new Error(
+          "Aucun kiosque actif n'est associé à votre compte."
+        );
       }
 
       setKiosk(kioskData);
@@ -320,7 +332,7 @@ export default function CaissePage() {
 
       return matchesSearch && matchesType && matchesPeriod;
     });
-  }, [movements, search, typeFilter, periodFilter]);
+  }, [movements, search, typeFilter, periodFilter, currentDate]);
 
   function openForm(type = "entree") {
     setError("");
