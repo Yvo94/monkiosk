@@ -49,7 +49,8 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace("/dashboard");
+      //router.replace("/dashboard");
+      router.replace("/structures");
       router.refresh();
     } catch (error) {
       console.error("Erreur de connexion :", error);

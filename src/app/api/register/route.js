@@ -1,4 +1,3 @@
-// src/app/api/register/route.js
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -30,6 +29,10 @@ function getAdminClient() {
   });
 }
 
+function throwIfError(error) {
+  if (error) throw error;
+}
+
 export async function POST(request) {
   let admin;
   let newUserId = null;
@@ -39,21 +42,75 @@ export async function POST(request) {
 
     const nomProprietaire = String(body.nomProprietaire || "").trim();
     const nomKiosque = String(body.nomKiosque || "").trim();
+    const nomLavage = String(body.nomLavage || "").trim();
     const whatsapp = normalizePhone(body.whatsapp);
     const emailSaisi = String(body.email || "").trim().toLowerCase();
     const motDePasse = String(body.motDePasse || "");
     const devise = String(body.devise || "FCFA").trim();
 
-    if (!nomProprietaire || !nomKiosque || !whatsapp || !motDePasse) {
+    // Compatibilité avec l'ancien formulaire :
+    // en l'absence de "modules", on conserve le comportement Kiosque.
+    const modulesDemandes =
+      body.modules === undefined ? ["kiosque"] : body.modules;
+
+    if (
+      !Array.isArray(modulesDemandes) ||
+      modulesDemandes.length === 0 ||
+      !modulesDemandes.every(
+        (module) => typeof module === "string"
+      )
+    ) {
+      return NextResponse.json(
+        { error: "Sélectionne au moins un module valide." },
+        { status: 400 }
+      );
+    }
+
+    const modules = [...new Set(modulesDemandes)];
+
+    const modulesAutorises = ["kiosque", "lavage"];
+    const modulesInvalides = modules.filter(
+      (module) => !modulesAutorises.includes(module)
+    );
+
+    if (modulesInvalides.length > 0) {
+      return NextResponse.json(
+        { error: "Un ou plusieurs modules sélectionnés sont invalides." },
+        { status: 400 }
+      );
+    }
+
+    const veutKiosque = modules.includes("kiosque");
+    const veutLavage = modules.includes("lavage");
+
+    if (!nomProprietaire || !whatsapp || !motDePasse) {
       return NextResponse.json(
         { error: "Renseigne tous les champs obligatoires." },
         { status: 400 }
       );
     }
 
-    if (nomProprietaire.length > 120 || nomKiosque.length > 150) {
+    if (
+      nomProprietaire.length > 120 ||
+      nomKiosque.length > 150 ||
+      nomLavage.length > 150
+    ) {
       return NextResponse.json(
-        { error: "Le nom saisi est trop long." },
+        { error: "Un des noms saisis est trop long." },
+        { status: 400 }
+      );
+    }
+
+    if (veutKiosque && !nomKiosque) {
+      return NextResponse.json(
+        { error: "Renseigne le nom de ton établissement Kiosque." },
+        { status: 400 }
+      );
+    }
+
+    if (veutLavage && !nomLavage) {
+      return NextResponse.json(
+        { error: "Renseigne le nom de ta station de lavage." },
         { status: 400 }
       );
     }
@@ -95,14 +152,14 @@ export async function POST(request) {
 
     admin = getAdminClient();
 
-    // Vérifier si le numéro est déjà utilisé dans le profil applicatif.
+    // Vérifier que le numéro n'est pas déjà utilisé.
     const { data: existingProfile, error: lookupError } = await admin
       .from("users")
       .select("id")
       .eq("telephone", whatsapp)
       .maybeSingle();
 
-    if (lookupError) throw lookupError;
+    throwIfError(lookupError);
 
     if (existingProfile) {
       return NextResponse.json(
@@ -111,11 +168,30 @@ export async function POST(request) {
       );
     }
 
-    /*
-     * La connexion existante utilise users.auth_email.
-     * Si aucun e-mail personnel n'est fourni, on crée un identifiant technique
-     * stable. Il ne s'agit pas d'une adresse de contact.
-     */
+    // Vérifier les modules dans le catalogue central.
+    const { data: catalogue, error: catalogueError } = await admin
+      .from("modules")
+      .select("id, code, actif")
+      .in("code", modules);
+
+    throwIfError(catalogueError);
+
+    const modulesDisponibles = catalogue || [];
+    const codesDisponibles = modulesDisponibles
+      .filter((module) => module.actif)
+      .map((module) => module.code);
+
+    if (modules.some((code) => !codesDisponibles.includes(code))) {
+      return NextResponse.json(
+        {
+          error:
+            "Un module sélectionné est indisponible. Vérifie le catalogue des modules.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Identifiant de connexion technique si aucun e-mail n'est fourni.
     const phoneDigits = whatsapp.replace(/\D/g, "");
     const authEmail =
       emailSaisi || `wa-${phoneDigits}@auth.maaxbusiness.com`;
@@ -154,6 +230,7 @@ export async function POST(request) {
 
     newUserId = authData.user.id;
 
+    // Profil propriétaire.
     const { error: profileError } = await admin.from("users").insert({
       id: newUserId,
       nom: nomProprietaire,
@@ -164,8 +241,9 @@ export async function POST(request) {
       auth_email: authEmail,
     });
 
-    if (profileError) throw profileError;
+    throwIfError(profileError);
 
+    // Rôle global du propriétaire.
     const { error: roleError } = await admin
       .from("monkiosk_user_roles")
       .insert({
@@ -173,96 +251,177 @@ export async function POST(request) {
         role: "owner",
       });
 
-    if (roleError) throw roleError;
+    throwIfError(roleError);
 
-    const { data: kiosque, error: kioskError } = await admin
-      .from("kiosques")
-      .insert({
-        nom: nomKiosque,
-        owner_id: newUserId,
+    // Enregistrer les modules sélectionnés.
+    const associations = modulesDisponibles
+      .filter((module) => modules.includes(module.code))
+      .map((module) => ({
+        proprietaire_id: newUserId,
+        module_id: module.id,
         actif: true,
-        devise,
-      })
-      .select("id, nom, owner_id, actif, devise")
-      .single();
+      }));
 
-    if (kioskError) throw kioskError;
+    const { error: associationsError } = await admin
+      .from("proprietaire_modules")
+      .insert(associations);
 
-    // Rattacher le kiosque au profil du propriétaire.
-    const { data: profilRattache, error: rattachementError } = await admin
-    .from("users")
-    .update({
-        kiosque_id: kiosque.id,
-    })
-    .eq("id", newUserId)
-    .select("id, kiosque_id")
-    .single();
+    throwIfError(associationsError);
 
-    if (rattachementError) {
-    console.error(
-        "Erreur de rattachement du propriétaire au kiosque :",
-        rattachementError.message
-    );
+    let kiosque = null;
+    let caissePrincipale = null;
+    let lavage = null;
+    let caisseLavage = null;
 
-    throw rattachementError;
+    // =====================================================
+    // MODULE KIOSQUE : établissement + caisse principale
+    // =====================================================
+    if (veutKiosque) {
+      const { data, error } = await admin
+        .from("kiosques")
+        .insert({
+          nom: nomKiosque,
+          owner_id: newUserId,
+          actif: true,
+          devise,
+        })
+        .select("id, nom, owner_id, actif, devise")
+        .single();
+
+      throwIfError(error);
+      kiosque = data;
+
+      // Conserver la compatibilité avec le dashboard actuel.
+      const { data: profilRattache, error: rattachementError } =
+        await admin
+          .from("users")
+          .update({ kiosque_id: kiosque.id })
+          .eq("id", newUserId)
+          .select("id, kiosque_id")
+          .single();
+
+      throwIfError(rattachementError);
+
+      if (profilRattache.kiosque_id !== kiosque.id) {
+        throw new Error(
+          "Le kiosque n'a pas été correctement associé au propriétaire."
+        );
+      }
+
+      const { data: caisse, error: caisseError } = await admin
+        .from("kiosque_caisses")
+        .insert({
+          kiosque_id: kiosque.id,
+          code: "PRINCIPALE",
+          nom: "Caisse principale",
+          solde_initial: 0,
+          solde_actuel: 0,
+        })
+        .select(
+          "id, kiosque_id, code, nom, solde_initial, solde_actuel"
+        )
+        .single();
+
+      throwIfError(caisseError);
+      caissePrincipale = caisse;
     }
 
-    // Vérification finale de la cohérence du rattachement.
-    if (profilRattache.kiosque_id !== kiosque.id) {
-    throw new Error(
-        "Le kiosque créé n'a pas été correctement associé au propriétaire."
-    );
-    }
+    // =====================================================
+    // MODULE LAVAGE : station + caisse principale dédiée
+    // =====================================================
+    if (veutLavage) {
+      const { data, error } = await admin
+        .from("lavages")
+        .insert({
+          nom: nomLavage,
+          owner_id: newUserId,
+          actif: true,
+          devise,
+        })
+        .select("id, nom, owner_id, actif, devise")
+        .single();
 
-    // Créer la caisse principale du nouveau kiosque.
-    const { data: caissePrincipale, error: caisseError } = await admin
-      .from("kiosque_caisses")
-      .insert({
-        kiosque_id: kiosque.id,
-        code: "PRINCIPALE",
-        nom: "Caisse principale",
-        solde_initial: 0,
-        solde_actuel: 0,
-      })
-      .select("id, kiosque_id, code, nom, solde_initial, solde_actuel")
-      .single();
+      throwIfError(error);
+      lavage = data;
 
-    if (caisseError) {
-      console.error(
-        "Erreur de création de la caisse principale :",
-        caisseError.message
-      );
+      const { data: caisse, error: caisseError } = await admin
+        .from("lavage_caisses")
+        .insert({
+          lavage_id: lavage.id,
+          code: "PRINCIPALE",
+          nom: "Caisse principale",
+          solde_initial: 0,
+          solde_actuel: 0,
+          actif: true,
+        })
+        .select(
+          "id, lavage_id, code, nom, solde_initial, solde_actuel"
+        )
+        .single();
 
-      throw caisseError;
+      throwIfError(caisseError);
+      caisseLavage = caisse;
     }
 
     return NextResponse.json(
       {
         success: true,
-        message: "Compte, structure et caisse principale créés avec succès.",
+        message: "Compte, modules, établissements et caisses créés avec succès.",
+        modules,
         kiosque,
         caissePrincipale,
+        lavage,
+        caisseLavage,
       },
       { status: 201 }
     );
   } catch (error) {
     console.error("Erreur inscription publique MAAX Business :", error);
 
-    // Nettoyage des enregistrements si une étape a échoué.
+    // Nettoyage compensatoire si une étape échoue.
+    // On libère d'abord le profil de sa référence au kiosque.
     if (admin && newUserId) {
-      await admin.from("kiosques").delete().eq("owner_id", newUserId);
-      await admin
-        .from("monkiosk_user_roles")
-        .delete()
-        .eq("user_id", newUserId);
-      await admin.from("users").delete().eq("id", newUserId);
-      await admin.auth.admin.deleteUser(newUserId);
+      try {
+        await admin
+          .from("users")
+          .update({ kiosque_id: null })
+          .eq("id", newUserId);
+
+        await admin
+          .from("lavages")
+          .delete()
+          .eq("owner_id", newUserId);
+
+        await admin
+          .from("kiosques")
+          .delete()
+          .eq("owner_id", newUserId);
+
+        await admin
+          .from("proprietaire_modules")
+          .delete()
+          .eq("proprietaire_id", newUserId);
+
+        await admin
+          .from("monkiosk_user_roles")
+          .delete()
+          .eq("user_id", newUserId);
+
+        await admin.from("users").delete().eq("id", newUserId);
+
+        await admin.auth.admin.deleteUser(newUserId);
+      } catch (cleanupError) {
+        console.error(
+          "Erreur pendant le nettoyage de l'inscription :",
+          cleanupError
+        );
+      }
     }
 
     return NextResponse.json(
       {
         error:
-          "La création du compte a échoué. Vérifie les informations et réessaie.",
+          "La création du compte a échoué. Vérifie la configuration et réessaie.",
       },
       { status: 500 }
     );

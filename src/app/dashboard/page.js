@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import NewSaleModal from "@/components/ventes/NewSaleModal";
 import NewProductModal from "@/components/produits/NewProductModal";
+
 import {
   ShoppingCart,
   Package,
@@ -468,6 +469,7 @@ export default function DashboardPage() {
   const [currentDate, setCurrentDate] = useState(null);
   const [newSaleOpen, setNewSaleOpen] = useState(false);
   const [newProductOpen, setNewProductOpen] = useState(false);
+  const [modalNouvelleOperation, setModalNouvelleOperation] = useState(false);
 
   useEffect(() => {
   setCurrentDate(new Date());
@@ -511,6 +513,34 @@ export default function DashboardPage() {
             
       const user = session.user;
 
+      const contextResponse = await fetch("/api/auth/context", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+
+
+      if (contextResponse.status === 401) {
+        window.location.replace("/login");
+        return;
+      }
+
+      if (!contextResponse.ok) {
+        throw new Error("Impossible de récupérer les modules du compte.");
+      }
+
+      const context = await contextResponse.json();
+      const modules = context.modules || [];
+
+      const aKiosque = modules.some(
+        (module) => module.code === "kiosque"
+      );
+
+      if (!aKiosque) {
+        // Ce dashboard est réservé au module Kiosque.
+        // L'utilisateur choisira sa structure depuis la page dédiée.
+        window.location.replace("/structures");
+        return;
+      }
       // Récupérer le kiosque associé au compte connecté.
       // Cette méthode fonctionne pour le propriétaire et le caissier.
       const kioskResponse = await fetch("/api/admin/users?action=kiosk", {

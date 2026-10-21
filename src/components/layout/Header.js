@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -7,81 +6,80 @@ import {
   ChevronDown,
   Menu,
   Store,
+  Droplets,
 } from "lucide-react";
-
-import { supabase } from "@/lib/supabase/client";
 
 export default function Header({ onMenuClick }) {
   const [userName, setUserName] = useState("Utilisateur");
   const [userRole, setUserRole] = useState("");
-  const [kioskName, setKioskName] = useState("");
+  const [establishmentName, setEstablishmentName] = useState("");
+  const [moduleName, setModuleName] = useState("MAAX Business");
   const [loadingUser, setLoadingUser] = useState(true);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-  
   useEffect(() => {
     let active = true;
 
-    const loadUserProfile = async () => {
+    async function loadUserProfile() {
       try {
         setLoadingUser(true);
 
-        // 1. Vérifier la session
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
+        const response = await fetch("/api/auth/context", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "same-origin",
+        });
 
-        if (sessionError) throw sessionError;
-
-        if (!session) {
-          if (active) {
-            setUserName("Utilisateur");
-            setUserRole("");
-            setKioskName("");
-          }
+        if (response.status === 401) {
+          window.location.replace("/login");
           return;
         }
 
-        // 2. Récupérer le profil et le kiosque via l'API sécurisée
-        const response = await fetch("/api/admin/users?action=kiosk", {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        const result = await response.json();
-
         if (!response.ok) {
-          throw new Error(
-            result.error || "Impossible de récupérer le profil utilisateur."
-          );
+          throw new Error("Impossible de récupérer le profil utilisateur.");
         }
+
+        const context = await response.json();
+        const modules = context.modules || [];
+
+        const path = window.location.pathname;
+        const isLavagePage = path.startsWith("/dashboard/lavage");
+
+        const selectedModule = isLavagePage
+          ? modules.find((module) => module.code === "lavage")
+          : modules.find((module) => module.code === "kiosque") ||
+            modules.find((module) => module.code === "lavage");
 
         if (active) {
-          setUserName(result.user?.nom?.trim() || "Utilisateur");
-          setUserRole(result.user?.role || "");
-          setKioskName(result.kiosk?.nom?.trim() || "");
+          setUserName(context.user?.nom?.trim() || "Utilisateur");
+          setUserRole(context.user?.role || "");
+
+          setEstablishmentName(
+            selectedModule?.etablissement?.nom?.trim() || ""
+          );
+
+          setModuleName(
+            selectedModule?.code === "lavage"
+              ? "MAAX Lavage"
+              : selectedModule?.code === "kiosque"
+                ? "MAAX Kiosque"
+                : "MAAX Business"
+          );
         }
       } catch (error) {
-        console.error(
-          "Erreur de récupération des informations du header :",
-          error
-        );
+        console.error("Erreur de chargement du Header :", error);
 
         if (active) {
           setUserName("Utilisateur");
           setUserRole("");
-          setKioskName("");
+          setEstablishmentName("");
+          setModuleName("MAAX Business");
         }
       } finally {
         if (active) {
           setLoadingUser(false);
         }
       }
-    };
+    }
 
     loadUserProfile();
 
@@ -90,7 +88,6 @@ export default function Header({ onMenuClick }) {
     };
   }, []);
 
-
   const initials = userName
     .split(/\s+/)
     .filter(Boolean)
@@ -98,9 +95,11 @@ export default function Header({ onMenuClick }) {
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
 
+  const isLavage = moduleName === "MAAX Lavage";
+  const EstablishmentIcon = isLavage ? Droplets : Store;
+
   return (
     <header className="sticky top-0 z-30 flex h-[88px] items-center justify-between border-b border-gray-100 bg-white px-4 shadow-sm sm:px-6 lg:px-8">
-      {/* GAUCHE */}
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
@@ -111,17 +110,25 @@ export default function Header({ onMenuClick }) {
           <Menu className="h-6 w-6" />
         </button>
 
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-50">
-          <Store className="h-5 w-5 text-[#A94420]" />
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+            isLavage ? "bg-blue-50" : "bg-orange-50"
+          }`}
+        >
+          <EstablishmentIcon
+            className={`h-5 w-5 ${
+              isLavage ? "text-blue-700" : "text-[#A94420]"
+            }`}
+          />
         </div>
 
         <div className="min-w-0">
           <h2 className="truncate text-base font-bold text-[#17243A] sm:text-xl">
-            {!mounted || loadingUser
-              ? "Chargement du kiosque..."
-              : kioskName
-                ? `Bienvenue chez - ${kioskName}`
-                : "MonKiosk"}
+            {loadingUser
+              ? "Chargement..."
+              : establishmentName
+                ? `Bienvenue chez - ${establishmentName}`
+                : moduleName}
           </h2>
 
           <div className="mt-0.5 flex items-center gap-1.5">
@@ -133,16 +140,13 @@ export default function Header({ onMenuClick }) {
         </div>
       </div>
 
-      {/* DROITE */}
       <div className="ml-3 flex shrink-0 items-center gap-2 sm:gap-4">
-        {/* Notifications */}
         <button
           type="button"
           className="relative flex h-10 w-10 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-50"
           aria-label="Notifications"
         >
           <Bell className="h-5 w-5" />
-
           <span className="absolute right-0.5 top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#D72855] px-1 text-[9px] font-bold text-white">
             3
           </span>
@@ -150,7 +154,6 @@ export default function Header({ onMenuClick }) {
 
         <div className="hidden h-8 w-px bg-gray-200 sm:block" />
 
-        {/* UTILISATEUR */}
         <button
           type="button"
           className="flex items-center gap-2 rounded-xl p-1.5 transition hover:bg-gray-50 sm:gap-3"
@@ -166,9 +169,8 @@ export default function Header({ onMenuClick }) {
             <p className="truncate text-sm font-bold leading-5 text-[#17243A]">
               {loadingUser ? "Chargement..." : userName}
             </p>
-
             <p className="truncate text-xs text-gray-500">
-              {userRole || "Utilisateur MonKiosk"}
+              {userRole || moduleName}
             </p>
           </div>
 

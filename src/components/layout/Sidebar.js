@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -21,9 +20,15 @@ import {
   LogOut,
   X,
   LockKeyhole,
+  Droplets,
+  CarFront,
+  ClipboardList,
+  UserRound,
+  ArrowLeftRight,
+  Building2,
 } from "lucide-react";
 
-const menuItems = [
+const kioskMenuItems = [
   { label: "Accueil", href: "/dashboard", icon: Home },
   { label: "Catégories", href: "/dashboard/categories", icon: Tags },
   { label: "Produits", href: "/dashboard/produits", icon: Package },
@@ -32,9 +37,94 @@ const menuItems = [
   { label: "Dépenses", href: "/dashboard/depenses", icon: Receipt },
   { label: "Stock", href: "/dashboard/stock", icon: Boxes },
   { label: "Caisses", href: "/dashboard/caisse", icon: WalletCards },
-  { label: "Statistiques", href: "/dashboard/statistiques", icon: BarChart3},
-  { label: "Utilisateurs", href: "/dashboard/utilisateurs", icon: Users},
-  { label: "Paramètres", href: "/dashboard/parametres", icon: Settings},
+  {
+    label: "Statistiques",
+    href: "/dashboard/statistiques",
+    icon: BarChart3,
+  },
+  {
+    label: "Utilisateurs",
+    href: "/dashboard/utilisateurs",
+    icon: Users,
+  },
+  {
+    label: "Paramètres",
+    href: "/dashboard/parametres",
+    icon: Settings,
+  },
+];
+
+const lavageMenuItems = [
+  {
+    label: "Vue d'ensemble",
+    href: "/dashboard/lavage",
+    icon: Home,
+  },
+  {
+    label: "Prestations",
+    href: "/dashboard/lavage/services",
+    icon: CarFront,
+  },
+  /*{
+    label: "File de lavage",
+    href: "/dashboard/lavage/file",
+    icon: ClipboardList,
+  },
+  {
+    label: "Historique des prestations",
+    href: "/dashboard/lavage/historique",
+    icon: Receipt,
+  },*/
+  {
+    label: "Laveurs",
+    href: "/dashboard/lavage/equipe",
+    icon: Users,
+  },
+  {
+    label: "Types de véhicules",
+    href: "/dashboard/lavage/vehicules",
+    icon: CarFront,
+  },
+  {
+    label: "Types de lavage",
+    href: "/dashboard/lavage/types-lavage",
+    icon: Droplets,
+  },
+  {
+    label: "Tarifs",
+    href: "/dashboard/lavage/tarifs",
+    icon: Tags,
+  },
+  {
+    label: "Clients",
+    href: "/dashboard/lavage/clients",
+    icon: UserRound,
+  },
+  /*{
+    label: "Encaissements",
+    href: "/dashboard/lavage/encaissements",
+    icon: WalletCards,
+  },*/
+  {
+    label: "Dépenses",
+    href: "/dashboard/lavage/depenses",
+    icon: ShoppingBag,
+  },
+  {
+    label: "Statistiques",
+    href: "/dashboard/lavage/statistiques",
+    icon: BarChart3,
+  },
+  /*{
+    label: "Caisses",
+    href: "/dashboard/lavage/configuration/caisses",
+    icon: WalletCards,
+  },*/
+  {
+    label: "Utilisateurs et accès",
+    href: "/dashboard/lavage/configuration/utilisateurs",
+    icon: Settings,
+  },
 ];
 
 export default function Sidebar({ open, onClose }) {
@@ -46,45 +136,45 @@ export default function Sidebar({ open, onClose }) {
   const [navHovered, setNavHovered] = useState(false);
 
   const [role, setRole] = useState(null);
+  const [modules, setModules] = useState([]);
   const [roleLoading, setRoleLoading] = useState(true);
   const [roleError, setRoleError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadUserRole() {
+    async function loadUserContext() {
       setRoleLoading(true);
       setRoleError("");
 
       try {
-        const response = await fetch("/api/admin/users?action=kiosk", {
+        const response = await fetch("/api/auth/context", {
           method: "GET",
           cache: "no-store",
           credentials: "same-origin",
         });
 
+        if (response.status === 401) {
+          router.replace("/login");
+          return;
+        }
+
         const result = await response.json();
 
         if (!response.ok) {
           throw new Error(
-            result.error || "Impossible de vérifier votre profil."
+            result.error || "Impossible de récupérer votre profil."
           );
         }
 
-        const userRole = result.user?.role ?? result.profile?.role;
-
-        if (!userRole) {
-          throw new Error("Le rôle de votre compte est introuvable.");
-        }
-
         if (!cancelled) {
-          setRole(userRole);
+          setRole(result.user?.role || null);
+          setModules(result.modules || []);
         }
       } catch (error) {
-        console.error("Chargement du profil MAAX Business :", error);
+        console.error("Chargement du contexte MAAX Business :", error);
 
         if (!cancelled) {
-          setRole(null);
           setRoleError(
             error.message || "Impossible de charger votre profil."
           );
@@ -96,19 +186,43 @@ export default function Sidebar({ open, onClose }) {
       }
     }
 
-    loadUserRole();
+    loadUserContext();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
-  // Le caissier n'a accès qu'au module Ventes dans la navigation.
-  const visibleMenuItems = role ? menuItems : [];
+  const hasKiosk = modules.some(
+    (module) => module.code === "kiosque"
+  );
+
+  const hasLavage = modules.some(
+    (module) => module.code === "lavage"
+  );
+
+  // Le menu dépend du tableau de bord actuellement ouvert.
+  const isLavageRoute =
+    pathname === "/dashboard/lavage" ||
+    pathname.startsWith("/dashboard/lavage/");
+
+  const currentModule = isLavageRoute ? "lavage" : "kiosque";
+  const hasCurrentModule =
+    currentModule === "lavage" ? hasLavage : hasKiosk;
+
+  const currentMenu =
+    currentModule === "lavage" ? lavageMenuItems : kioskMenuItems;
+
+  const currentModuleTitle =
+    currentModule === "lavage" ? "Gestion du lavage" : "Gestion du kiosque";
 
   const isActive = (href) => {
     if (href === "/dashboard") {
       return pathname === "/dashboard";
+    }
+
+    if (href === "/dashboard/lavage") {
+      return pathname === "/dashboard/lavage";
     }
 
     return pathname === href || pathname.startsWith(`${href}/`);
@@ -121,6 +235,7 @@ export default function Sidebar({ open, onClose }) {
     try {
       const response = await fetch("/api/auth/logout", {
         method: "POST",
+        credentials: "same-origin",
       });
 
       const result = await response.json();
@@ -142,9 +257,13 @@ export default function Sidebar({ open, onClose }) {
     }
   }
 
+  function handleChangeStructure() {
+    onClose?.();
+    router.push("/structures");
+  }
+
   return (
     <>
-      {/* Overlay mobile */}
       {open && (
         <button
           type="button"
@@ -154,7 +273,6 @@ export default function Sidebar({ open, onClose }) {
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`
           fixed left-0 top-0 z-50
@@ -166,7 +284,7 @@ export default function Sidebar({ open, onClose }) {
           ${open ? "translate-x-0" : "-translate-x-full"}
         `}
       >
-        {/* Logo et identité */}
+        {/* Identité */}
         <div className="flex h-[88px] shrink-0 items-center border-b border-white/10 px-5">
           <div className="min-w-0 flex-1">
             <Brand />
@@ -182,7 +300,36 @@ export default function Sidebar({ open, onClose }) {
           </button>
         </div>
 
-        {/* Navigation */}
+        {/* Structure et changement d'espace */}
+        <div className="border-b border-white/10 p-4">
+          <div className="mb-3 flex items-center gap-2 px-1">
+            {currentModule === "lavage" ? (
+              <Droplets className="h-5 w-5 text-[#D9A45B]" />
+            ) : (
+              <Building2 className="h-5 w-5 text-[#D9A45B]" />
+            )}
+
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Espace actuel
+              </p>
+              <p className="truncate text-sm font-semibold text-white">
+                {currentModule === "lavage" ? "Lavage" : "Kiosque"}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleChangeStructure}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs font-semibold text-slate-300 transition hover:border-[#D9A45B]/40 hover:bg-[#D9A45B]/10 hover:text-[#F1C98F]"
+          >
+            <ArrowLeftRight className="h-4 w-4" />
+            Changer de structure
+          </button>
+        </div>
+
+        {/* Navigation métier */}
         <nav
           aria-label="Navigation principale"
           onMouseEnter={() => setNavHovered(true)}
@@ -191,10 +338,6 @@ export default function Sidebar({ open, onClose }) {
             navHovered ? "sidebar-scroll-active" : ""
           }`}
         >
-          <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-            {role === "caissier" ? "Espace caisse" : "Espace de gestion"}
-          </p>
-
           {roleLoading ? (
             <p className="px-3 py-3 text-sm text-slate-400">
               Chargement du menu...
@@ -206,87 +349,113 @@ export default function Sidebar({ open, onClose }) {
             >
               {roleError} Rechargez la page ou reconnectez-vous.
             </p>
+          ) : !hasCurrentModule ? (
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3">
+              <p className="text-xs leading-relaxed text-amber-200">
+                Vous n'avez pas accès à cet espace.
+              </p>
+              <button
+                type="button"
+                onClick={handleChangeStructure}
+                className="mt-3 text-xs font-bold text-[#F1C98F] underline"
+              >
+                Choisir une autre structure
+              </button>
+            </div>
           ) : (
-            <div className="space-y-1.5">
-              
-              {visibleMenuItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.href);
-                const locked =
-                  role === "caissierr" && item.href !== "/dashboard/ventes";
+            <section>
+              <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                {role === "caissier" && currentModule === "kiosque"
+                  ? "Espace caisse"
+                  : currentModuleTitle}
+              </p>
 
-                const menuClassName = `
-                  group relative flex h-11 items-center gap-3
-                  overflow-hidden rounded-xl px-3.5
-                  text-sm font-medium transition-all duration-200
-                  ${
-                    locked
-                      ? "cursor-not-allowed text-slate-500 opacity-50"
-                      : active
-                        ? "bg-[#D9A45B]/15 text-[#F1C98F]"
-                        : "text-slate-300 hover:bg-white/[0.07] hover:text-white"
+              <div className="space-y-1.5">
+                {currentMenu.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.href);
+
+                  // Restriction visuelle conservée pour le caissier Kiosque.
+                  const locked =
+                    role === "caissier" &&
+                    currentModule === "kiosque" &&
+                    item.href !== "/dashboard/ventes";
+
+                  const menuClassName = `
+                    group relative flex h-11 items-center gap-3
+                    overflow-hidden rounded-xl px-3.5
+                    text-sm font-medium transition-all duration-200
+                    ${
+                      locked
+                        ? "cursor-not-allowed text-slate-500 opacity-50"
+                        : active
+                          ? "bg-[#D9A45B]/15 text-[#F1C98F]"
+                          : "text-slate-300 hover:bg-white/[0.07] hover:text-white"
+                    }
+                  `;
+
+                  const content = (
+                    <>
+                      {active && !locked && (
+                        <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-[#D9A45B]" />
+                      )}
+
+                      <Icon
+                        className={`
+                          h-[19px] w-[19px] shrink-0 transition-colors
+                          ${
+                            locked
+                              ? "text-slate-500"
+                              : active
+                                ? "text-[#D9A45B]"
+                                : "text-slate-400 group-hover:text-slate-200"
+                          }
+                        `}
+                        strokeWidth={1.8}
+                      />
+
+                      <span>{item.label}</span>
+
+                      {locked ? (
+                        <span
+                          className="ml-auto text-slate-500"
+                          title="Accès réservé"
+                        >
+                          <LockKeyhole className="h-4 w-4" />
+                        </span>
+                      ) : active ? (
+                        <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#D9A45B]" />
+                      ) : null}
+                    </>
+                  );
+
+                  if (locked) {
+                    return (
+                      <div
+                        key={item.href}
+                        aria-disabled="true"
+                        title="Accès réservé à un autre profil."
+                        className={menuClassName}
+                      >
+                        {content}
+                      </div>
+                    );
                   }
-                `;
 
-                const content = (
-                  <>
-                    {active && !locked && (
-                      <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-[#D9A45B]" />
-                    )}
-
-                    <Icon
-                      className={`
-                        h-[19px] w-[19px] shrink-0 transition-colors
-                        ${
-                          locked
-                            ? "text-slate-500"
-                            : active
-                              ? "text-[#D9A45B]"
-                              : "text-slate-400 group-hover:text-slate-200"
-                        }
-                      `}
-                      strokeWidth={1.8}
-                    />
-
-                    <span>{item.label}</span>
-
-                    {locked ? (
-                      <span className="ml-auto text-slate-500" title="Accès réservé">
-                        <LockKeyhole className="h-4 w-4" />
-                      </span>
-                    ) : active ? (
-                      <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#D9A45B]" />
-                    ) : null}
-                  </>
-                );
-
-                if (locked) {
                   return (
-                    <div
+                    <Link
                       key={item.href}
-                      aria-disabled="true"
-                      title="Ce module n'est pas accessible avec votre profil."
+                      href={item.href}
+                      onClick={onClose}
+                      aria-current={active ? "page" : undefined}
                       className={menuClassName}
                     >
                       {content}
-                    </div>
+                    </Link>
                   );
-                }
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={onClose}
-                    aria-current={active ? "page" : undefined}
-                    className={menuClassName}
-                  >
-                    {content}
-                  </Link>
-                );
-              })}
-
-            </div>
+                })}
+              </div>
+            </section>
           )}
         </nav>
 
@@ -305,15 +474,9 @@ export default function Sidebar({ open, onClose }) {
             type="button"
             onClick={handleLogout}
             disabled={loggingOut}
-            className="
-              flex h-11 w-full items-center gap-3 rounded-xl px-3.5
-              text-sm font-medium text-slate-300
-              transition hover:bg-red-500/10 hover:text-red-300
-              disabled:cursor-not-allowed disabled:opacity-60
-            "
+            className="flex h-11 w-full items-center gap-3 rounded-xl px-3.5 text-sm font-medium text-slate-300 transition hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <LogOut className="h-[19px] w-[19px] shrink-0" />
-
             <span>
               {loggingOut ? "Déconnexion..." : "Déconnexion"}
             </span>
