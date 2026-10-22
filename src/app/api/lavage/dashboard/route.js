@@ -491,33 +491,36 @@ export async function GET(request) {
       devise,
 
       statistiques: {
-        chiffreAffaires,
-        encaissements,
+  chiffreAffaires,
+  encaissements,
 
-        prestationsTerminees: servicesToday.length,
+  prestationsTerminees: servicesToday.length,
 
-        panierMoyen:
-          servicesToday.length > 0
-            ? chiffreAffaires / servicesToday.length
-            : 0,
+  panierMoyen:
+    servicesToday.length > 0
+      ? chiffreAffaires / servicesToday.length
+      : 0,
 
-        commissionsTotales,
-        commissionsPayees,
-        commissionsAPayer,
+  commissionsTotales,
+  commissionsPayees,
+  commissionsAPayer,
 
-        resultatApresCommissions:
-          chiffreAffaires - commissionsTotales,
+  resultatApresCommissions:
+    chiffreAffaires - commissionsTotales,
 
-        soldeCaisses,
-        caissesActives: caisses.length,
+  // Estimation avant déduction des autres dépenses
+  beneficeNet:
+    chiffreAffaires - commissionsTotales,
 
-        prestationsConfigurees:
-          prestationsResult.count || 0,
+  soldeCaisses,
+  caissesActives: caisses.length,
 
-        laveursActifs:
-          laveursResult.count || 0,
+  prestationsConfigurees:
+    prestationsResult.count || 0,
+
+  laveursActifs:
+    laveursResult.count || 0,
       },
-
       commissionsParLaveur:
         Array.from(commissionsParLaveur.values()),
 

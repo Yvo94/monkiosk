@@ -23,6 +23,7 @@ import {
   UserRound,
   Wallet,
   X,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 
@@ -37,8 +38,28 @@ const PAYMENT_MODES = [
   ["autre", "Autre"],
 ];
 
+function getTodayAbidjan() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Abidjan",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  );
+
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`;
+}
+
 const EMPTY_FORM = {
   lavage_id: "",
+  date_service: getTodayAbidjan(),
   type_vehicule_id: "",
   prestation_id: "",
   laveur_id: "",
@@ -289,15 +310,18 @@ function VehicleCard({ item, active, onClick }) {
   );
 }
 
-function StatCard({ label, value, description, icon: Icon }) {
+function StatCard({ label, value, description, icon: Icon, valueColor }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-slate-500">{label}</p>
-          <p className="mt-2 break-words text-2xl font-extrabold text-[#14233B]">
-            {value}
-          </p>
+            <p
+              className="mt-2 break-words text-2xl font-extrabold"
+              style={{ color: valueColor || "#14233B" }}
+            >
+              {value}
+            </p>
           <p className="mt-2 text-xs text-slate-500">{description}</p>
         </div>
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#D8BD83]/20 text-[#14233B]">
@@ -326,6 +350,12 @@ export default function ServicesPage() {
   const [loadingOperations, setLoadingOperations] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [operationToDelete, setOperationToDelete] = useState(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -564,6 +594,84 @@ export default function ServicesPage() {
     ]);
   }, [loadCatalogue, loadOperations]);
 
+  function openDeleteModal(operation) {
+    setError("");
+    setSuccess("");
+    setDeleteError("");
+    setDeleteReason("");
+    setOperationToDelete(operation);
+    setDeleteModalOpen(true);
+  }
+
+  function closeDeleteModal() {
+    if (deleting) return;
+
+    setDeleteModalOpen(false);
+    setOperationToDelete(null);
+    setDeleteReason("");
+    setDeleteError("");
+  }
+
+  async function deleteOperation() {
+    if (!station?.id || !operationToDelete?.id) {
+      setDeleteError("Station ou opération introuvable.");
+      return;
+    }
+
+    const motif = deleteReason.trim();
+
+    if (motif.length < 3) {
+      setDeleteError(
+        "Le motif de suppression doit contenir au moins 3 caractères."
+      );
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError("");
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await fetch("/api/lavage/services", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          lavage_id: station.id,
+          service_id: operationToDelete.id,
+          motif,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.error || "Impossible de supprimer cette opération."
+        );
+      }
+
+      setDeleteModalOpen(false);
+      setOperationToDelete(null);
+      setDeleteReason("");
+
+      setSuccess(
+        result.message ||
+          "Opération archivée et supprimée avec succès."
+      );
+
+      await refreshPage(station.id);
+    } catch (e) {
+      setDeleteError(
+        e.message || "Une erreur est survenue pendant la suppression."
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   useEffect(() => {
     loadStations();
   }, [loadStations]);
@@ -605,6 +713,7 @@ export default function ServicesPage() {
     setForm((prev) => ({
       ...EMPTY_FORM,
       lavage_id: prev.lavage_id,
+      date_service: getTodayAbidjan(),
       caisse_id: caisses.length === 1 ? caisses[0].id : "",
     }));
 
@@ -628,6 +737,15 @@ export default function ServicesPage() {
     setError("");
 
     if (step === 1) {
+      if (!form.date_service) {
+        setError("Sélectionne la date de l'opération.");
+        return;
+      }
+
+      if (form.date_service > getTodayAbidjan()) {
+        setError("La date de l'opération ne peut pas être dans le futur.");
+        return;
+      }
       if (!selectedType) {
         setError("Sélectionne un type de véhicule.");
         return;
@@ -733,16 +851,18 @@ export default function ServicesPage() {
     const quantiteFinale = Number(quantite);
 
     const payload = {
+      date_service: form.date_service,
       type_vehicule_id: form.type_vehicule_id,
       laveur_id: form.laveur_id,
       caisse_id: form.caisse_id,
       mode_paiement: form.mode_paiement || null,
       reference_paiement: form.reference_paiement.trim() || null,
       notes: form.notes.trim() || null,
+      quantite_operations: quantiteFinale,
       details: [
         {
           prestation_id: form.prestation_id,
-          quantite: quantiteFinale,
+          quantite: 1,
         },
       ],
       client: {
@@ -927,6 +1047,11 @@ export default function ServicesPage() {
     0
    );
 
+   
+  // Résultat après commissions, hors autres dépenses de la station.
+  const beneficeNet = chiffreAffaires - totalCommissionsLaveurs;
+
+
   const ticketMoyen = nombreOperations
     ? chiffreAffaires / nombreOperations
     : 0;
@@ -1097,11 +1222,18 @@ export default function ServicesPage() {
             icon={Wallet}
           />
           <StatCard
+            label="Bénéfice net"
+            value={money(beneficeNet, station?.devise)}
+            description="CA − commissions, hors autres dépenses"
+            icon={Wallet}
+            valueColor="#1100ac"
+          />
+          {/*<StatCard
             label="Ticket moyen"
             value={money(ticketMoyen, station?.devise)}
             description="CA divisé par les opérations terminées"
             icon={CircleDollarSign}
-          />
+          />*/}
         </div>
 
         {/* HISTORIQUE */}
@@ -1115,16 +1247,6 @@ export default function ServicesPage() {
                 {filteredOperations.length} résultat(s) · {operations.length} opération(s) chargée(s)
               </p>
             </div>
-
-            <button
-              type="button"
-              onClick={openModal}
-              disabled={!station || loadingCatalogue}
-              className="inline-flex items-center gap-2 rounded-xl bg-[#14233B] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#203754] disabled:opacity-50"
-            >
-              <Plus size={17} />
-              Nouveau
-            </button>
           </div>
 
           {/* FILTRES */}
@@ -1300,12 +1422,29 @@ export default function ServicesPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-                      <span className="text-xs text-slate-500">Montant</span>
-                      <span className="text-lg font-extrabold text-[#14233B]">
-                        {money(op.montant_total, station?.devise)}
-                      </span>
+                    
+                    <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                      <div className="min-w-0">
+                        <span className="text-xs text-slate-500">Montant</span>
+                        <p className="text-lg font-extrabold text-[#14233B]">
+                          {money(op.montant_total, station?.devise)}
+                        </p>
+                      </div>
+
+                      {isCompleted(op) && (
+                        <button
+                          type="button"
+                          onClick={() => openDeleteModal(op)}
+                          disabled={deleting}
+                          className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                          aria-label="Supprimer cette opération"
+                        >
+                          <Trash2 size={16} />
+                          Supprimer
+                        </button>
+                      )}
                     </div>
+
                   </article>
                 ))}
               </div>
@@ -1323,6 +1462,7 @@ export default function ServicesPage() {
                       <th className="px-4 py-4 font-semibold">Paiement</th>
                       <th className="px-4 py-4 text-right font-semibold">Montant</th>
                       <th className="px-4 py-4 font-semibold">Statut</th>
+                      <th className="px-4 py-4 font-semibold">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1370,6 +1510,20 @@ export default function ServicesPage() {
                             {statusLabel(op.statut)}
                           </span>
                         </td>
+                        <td className="px-4 py-4">
+                          {isCompleted(op) && (
+                            <button
+                              type="button"
+                              onClick={() => openDeleteModal(op)}
+                              disabled={deleting}
+                              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                              aria-label="Supprimer cette opération"
+                            >
+                              <Trash2 size={15} />
+                              Supprimer
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1383,6 +1537,177 @@ export default function ServicesPage() {
           )}
         </section>
       </div>
+
+            
+      {/* MODAL : CONFIRMATION DE SUPPRESSION */}
+      {deleteModalOpen && operationToDelete && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !deleting
+            ) {
+              closeDeleteModal();
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-operation-title"
+            className="w-full max-w-lg overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
+          >
+            <header className="flex items-center gap-3 bg-red-50 px-5 py-5 sm:px-6">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-700">
+                <Trash2 size={22} />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <h2
+                  id="delete-operation-title"
+                  className="text-lg font-extrabold text-[#14233B]"
+                >
+                  Supprimer l’opération ?
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  Cette action sera archivée et régularisée en caisse.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                disabled={deleting}
+                aria-label="Fermer"
+                className="rounded-lg p-2 text-slate-500 hover:bg-white disabled:opacity-50"
+              >
+                <X size={20} />
+              </button>
+            </header>
+
+            <div className="space-y-5 p-5 sm:p-6">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="text-slate-500">Véhicule</span>
+                  <strong className="text-right text-[#14233B]">
+                    {operationToDelete.vehicule?.immatriculation ||
+                      "Sans immatriculation"}
+                  </strong>
+                </div>
+
+                <div className="mt-3 flex justify-between gap-3 text-sm">
+                  <span className="text-slate-500">Client</span>
+                  <strong className="text-right text-[#14233B]">
+                    {operationToDelete.client?.nom || "Client de passage"}
+                  </strong>
+                </div>
+
+                <div className="mt-3 flex justify-between gap-3 text-sm">
+                  <span className="text-slate-500">Prestation</span>
+                  <strong className="text-right text-[#14233B]">
+                    {operationToDelete.prestation?.nom || "—"}
+                  </strong>
+                </div>
+
+                <div className="mt-3 flex justify-between gap-3 text-sm">
+                  <span className="text-slate-500">Date</span>
+                  <strong className="text-right text-[#14233B]">
+                    {formatDate(
+                      operationToDelete.date_service ||
+                        operationToDelete.created_at
+                    )}
+                  </strong>
+                </div>
+
+                <div className="mt-3 flex justify-between gap-3 border-t border-slate-200 pt-3 text-sm">
+                  <span className="text-slate-600">Montant</span>
+                  <strong className="text-right text-lg text-[#14233B]">
+                    {money(
+                      operationToDelete.montant_total,
+                      station?.devise
+                    )}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">
+                L’opération sera conservée dans les archives avec son motif.
+                Les encaissements seront régularisés dans la caisse.
+                Une opération dont la commission est déjà payée ne pourra pas être supprimée.
+              </div>
+
+              <div>
+                <label
+                  htmlFor="delete-operation-reason"
+                  className="mb-2 block text-sm font-bold text-[#14233B]"
+                >
+                  Motif de suppression <span className="text-red-600">*</span>
+                </label>
+
+                <textarea
+                  id="delete-operation-reason"
+                  value={deleteReason}
+                  onChange={(event) => {
+                    setDeleteReason(event.target.value);
+                    setDeleteError("");
+                  }}
+                  placeholder="Ex. : opération enregistrée par erreur…"
+                  rows={3}
+                  maxLength={500}
+                  required
+                  disabled={deleting}
+                  className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm outline-none transition focus:border-[#D8BD83] focus:ring-2 focus:ring-[#D8BD83]/30 disabled:bg-slate-100"
+                />
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Au moins 3 caractères · {deleteReason.trim().length}/500
+                </p>
+              </div>
+
+              {deleteError && (
+                <div
+                  role="alert"
+                  className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+                >
+                  {deleteError}
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={closeDeleteModal}
+                  disabled={deleting}
+                  className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="button"
+                  onClick={deleteOperation}
+                  disabled={deleting || deleteReason.trim().length < 3}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deleting ? (
+                    <>
+                      <LoaderCircle size={17} className="animate-spin" />
+                      Suppression en cours…
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={17} />
+                      Confirmer la suppression
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
 
       {/* MODAL : NOUVELLE OPÉRATION */}
       {modalOpen && (
@@ -1437,13 +1762,52 @@ export default function ServicesPage() {
                   </div>
                 )}
 
+                
                 {/* ÉTAPE 1 : VÉHICULE */}
                 {step === 1 && (
-                  <Section
-                    icon={CarFront}
-                    title="Choisir le véhicule"
-                    description="Sélectionne le type de véhicule à laver."
-                  >
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+
+                    {/* EN-TÊTE : TITRE À GAUCHE, DATE À DROITE */}
+                    <div className="mb-6 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+
+                      {/* TITRE */}
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#14233B] text-[#D8BD83]">
+                          <CarFront size={24} />
+                        </div>
+
+                        <div>
+                          <h2 className="text-xl font-bold text-[#14233B]">
+                            Choisir le véhicule
+                          </h2>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Sélectionne le type de véhicule à laver.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* DATE À DROITE */}
+                      <div className="w-full sm:w-64 lg:w-72 sm:shrink-0">
+                        <Field label="Date de l'opération">
+                          <input
+                            type="datetime-local"
+                            value={form.date_service || ""}
+                            max={getTodayAbidjan()}
+                            onChange={(e) => {
+                              update("date_service", e.target.value);
+                              setError("");
+                            }}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-[#D8BD83] focus:ring-2 focus:ring-[#D8BD83]/30"
+                          />
+                        </Field>
+
+                        <p className="mt-1.5 text-xs text-slate-500">
+                          Date passée autorisée, date future interdite.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* RECHERCHE DU VÉHICULE */}
                     <div className="mb-4">
                       <Field label="Rechercher un type de véhicule">
                         <div className="relative">
@@ -1461,6 +1825,7 @@ export default function ServicesPage() {
                       </Field>
                     </div>
 
+                    {/* LISTE DES VÉHICULES */}
                     {filteredTypes.length === 0 ? (
                       <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
                         Aucun type de véhicule actif trouvé. Vérifie le catalogue.
@@ -1478,17 +1843,27 @@ export default function ServicesPage() {
                       </div>
                     )}
 
+                    {/* VÉHICULE SÉLECTIONNÉ */}
                     {selectedType && (
                       <div className="mt-4 flex items-center gap-3 rounded-xl border border-[#D8BD83]/50 bg-[#D8BD83]/10 p-3">
-                        <CheckCircle2 size={20} className="shrink-0 text-[#14233B]" />
+                        <CheckCircle2
+                          size={20}
+                          className="shrink-0 text-[#14233B]"
+                        />
                         <div>
-                          <p className="text-xs text-slate-500">Véhicule sélectionné</p>
-                          <p className="font-bold text-[#14233B]">{selectedType.nom}</p>
+                          <p className="text-xs text-slate-500">
+                            Véhicule sélectionné
+                          </p>
+                          <p className="font-bold text-[#14233B]">
+                            {selectedType.nom}
+                          </p>
                         </div>
                       </div>
                     )}
-                  </Section>
+
+                  </div>
                 )}
+
 
                 {/* ÉTAPE 2 : LAVEUR ET PRESTATION */}
                 {step === 2 && (

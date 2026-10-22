@@ -65,15 +65,20 @@ const dateHeure = (value) =>
     timeZone: "Africa/Abidjan",
   }).format(new Date(value));
 
-function Indicateur({ titre, valeur, detail, icon: Icon }) {
+function Indicateur({ titre, valeur, detail, icon: Icon, couleurValeur }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm text-slate-500">{titre}</p>
-          <p className="mt-3 text-2xl font-bold tracking-tight text-[#14233B]">
+            <p
+              className="mt-3 text-2xl font-bold tracking-tight"
+              style={{
+                color: couleurValeur || "#14233B",
+              }}
+            >
             {valeur}
-          </p>
+            </p>
         </div>
 
         <div className="rounded-xl bg-[#14233B]/5 p-3 text-[#14233B]">
@@ -172,6 +177,10 @@ export default function LavageDashboardPage() {
     statistiques?.commissionsTotales || 0
   );
 
+  const beneficeNet = Number(
+    statistiques?.beneficeNet ?? 0
+  );
+
   const maxEvolution = Math.max(
     1,
     ...(evolution || []).map((jour) => Number(jour.montant || 0))
@@ -268,18 +277,20 @@ export default function LavageDashboardPage() {
           />
 
           <Indicateur
-            titre="Commissions laveurs du jour"
+            titre="Commissions laveurs"
             valeur={montant(totalCommissionsLaveurs, devise)}
-            detail="Commissions générées par les lavages terminés aujourd’hui"
-            icon={Wallet}
+            detail="Commissions générées aujourd’hui"
+            icon={Receipt}
           />
 
           <Indicateur
-            titre="Panier moyen"
-            valeur={montant(statistiques.panierMoyen, devise)}
-            detail="Chiffre d’affaires ÷ lavages terminés"
-            icon={Receipt}
+            titre="Bénéfice net"
+            valeur={montant(beneficeNet, devise)}
+            detail="Recettes − commissions − dépenses"
+            icon={Wallet}
+            couleurValeur="#1100ac"
           />
+          
         </div>
       </section>
 

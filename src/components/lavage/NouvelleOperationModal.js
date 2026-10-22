@@ -33,10 +33,30 @@ const PAYMENT_MODES = [
   ["autre", "Autre"],
 ];
 
+function getTodayAbidjan() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Abidjan",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+
+  const values = Object.fromEntries(
+    parts.map(({ type, value }) => [type, value])
+  );
+
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`;
+}
+
 const EMPTY_FORM = {
   lavage_id: "",
   type_vehicule_id: "",
   prestation_id: "",
+  date_service: getTodayAbidjan(),
   laveur_id: "",
   caisse_id: "",
   mode_paiement: "especes",
@@ -561,10 +581,23 @@ export default function NouvelleOperationModal({
 
     const quantity = Number(quantite);
 
+    if (!form.date_service) {
+        setError("Sélectionne la date de l'opération.");
+        setStep(1);
+        return;
+    }
+
+    if (form.date_service > getTodayAbidjan()) {
+        setError("La date de l'opération ne peut pas être dans le futur.");
+        setStep(1);
+        return;
+    }
+
     // IMPORTANT :
     // Une seule prestation dans details, quantité 1.
     // quantite_operations indique combien d'opérations distinctes créer.
     const payload = {
+      date_service: form.date_service,
       type_vehicule_id: form.type_vehicule_id,
       laveur_id: form.laveur_id,
       caisse_id: form.caisse_id,
@@ -722,11 +755,34 @@ export default function NouvelleOperationModal({
                 )}
 
                 {step === 1 && (
-                  <Section
-                    icon={CarFront}
-                    title="Choisir le véhicule"
-                    description="Sélectionne le type de véhicule à laver."
-                  >
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+                    <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#14233B] text-[#D8BD83]">
+                        <CarFront size={19} />
+                        </div>
+
+                        <div>
+                        <h3 className="font-bold text-[#14233B]">
+                            Choisir le véhicule
+                        </h3>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                            Sélectionne le type de véhicule à laver.
+                        </p>
+                        </div>
+                    </div>
+
+                    <div className="w-full sm:w-56">
+                        <Field label="Date de l'opération" required>
+                        <Input
+                            type="datetime-local"
+                            value={form.date_service}
+                            onChange={(value) => update("date_service", value)}
+                            required
+                        />
+                        </Field>
+                    </div>
+                    </div>
                     <Field label="Rechercher un véhicule">
                       <div className="relative">
                         <Search
@@ -781,7 +837,7 @@ export default function NouvelleOperationModal({
                         </div>
                       </div>
                     )}
-                  </Section>
+                  </section>
                 )}
 
                 {step === 2 && (

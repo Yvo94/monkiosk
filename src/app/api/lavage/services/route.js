@@ -226,6 +226,24 @@ function validatePayload(payload) {
     return "Les données de l'opération sont invalides.";
   }
 
+    // Date et heure de l'opération obligatoires
+  if (
+    typeof payload.date_service !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(
+      payload.date_service
+    )
+  ) {
+    return "La date et l'heure de l'opération sont obligatoires.";
+  }
+
+  const dateService = new Date(
+    `${payload.date_service}+00:00`
+  );
+
+  if (Number.isNaN(dateService.getTime())) {
+    return "La date et l'heure de l'opération sont invalides.";
+  }
+
   if (!payload.caisse_id) {
     return "La caisse est obligatoire.";
   }
@@ -485,3 +503,133 @@ export async function POST(request) {
     );
   }
 }
+
+
+export async function DELETE(request) {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const user = await getAuthenticatedUser(supabase);
+
+    if (!user) {
+      return jsonError("Authentification requise.", 401);
+    }
+
+    let body;
+
+    try {
+      body = await request.json();
+    } catch {
+      return jsonError(
+        "Le corps de la requête doit être un JSON valide.",
+        400
+      );
+    }
+
+    const lavageId =
+      typeof body?.lavage_id === "string"
+        ? body.lavage_id.trim()
+        : "";
+
+    const serviceId =
+      typeof body?.service_id === "string"
+        ? body.service_id.trim()
+        : "";
+
+    const motif =
+      typeof body?.motif === "string"
+        ? body.motif.trim()
+        : "";
+
+    if (!lavageId || !serviceId) {
+      return jsonError(
+        "La station et l'opération sont obligatoires.",
+        400
+      );
+    }
+
+    if (motif.length < 3) {
+      return jsonError(
+        "Le motif de suppression doit contenir au moins 3 caractères.",
+        400
+      );
+    }
+
+    // Vérification préalable de l'accès à la station.
+    const stations = await getOwnedStations(supabase, user.id);
+    const station = stations.find(
+      (item) => item.id === lavageId
+    );
+
+    if (!station) {
+      return jsonError(
+        "Station introuvable, inactive ou accès non autorisé.",
+        403
+      );
+    }
+
+    // L'archivage, la régularisation de caisse et la suppression
+    // sont exécutés ensemble par la fonction PostgreSQL.
+    const { data, error } = await supabase.rpc(
+      "lavage_supprimer_service",
+      {
+        p_lavage_id: lavageId,
+        p_service_id: serviceId,
+        p_motif: motif,
+      }
+    );
+
+    if (error) {
+      console.error("[RPC lavage_supprimer_service]", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+
+      const message =
+        error.message ||
+        "Impossible de supprimer cette opération.";
+
+      const status =
+        error.code === "42501"
+          ? 403
+          : error.code === "23505"
+            ? 409
+            : 400;
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: message,
+          ...(error.code ? { code: error.code } : {}),
+        },
+        { status }
+      );
+    }
+
+    if (!data?.success) {
+      return jsonError(
+        data?.message ||
+          "La suppression n'a pas été confirmée.",
+        400
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message:
+        data.message ||
+        "Opération archivée et supprimée avec succès.",
+      resultat: data,
+    });
+  } catch (error) {
+    console.error("[DELETE /api/lavage/services]", error);
+
+    return jsonError(
+      error.message ||
+        "Une erreur interne est survenue pendant la suppression.",
+      500
+    );
+  }
+}
+
