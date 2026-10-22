@@ -16,6 +16,8 @@ import {
   RefreshCw,
   AlertCircle,
   CalendarDays,
+  CircleDollarSign,
+  Clock3,
 } from "lucide-react";
 
 const rubriques = [
@@ -26,19 +28,17 @@ const rubriques = [
     icon: ClipboardList,
   },
   {
+    titre: "Dépenses",
+    description: "Enregistrer les charges et suivre les sorties d'argent.",
+    href: "/dashboard/lavage/depense",
+    icon: Wallet,
+  },
+  {
     titre: "Véhicules",
     description: "Consulter les véhicules et leur historique.",
     href: "/dashboard/lavage/vehicules",
     icon: CarFront,
   },
-  /*
-  {
-    titre: "Encaissements",
-    description: "Suivre les paiements et les recettes.",
-    href: "/dashboard/lavage/encaissements",
-    icon: CreditCard,
-  },
-  */
   {
     titre: "Équipe",
     description: "Gérer les laveurs et l'équipe.",
@@ -170,15 +170,29 @@ export default function LavageDashboardPage() {
     statistiques,
     evolution,
     derniersServices,
+    depensesDuJour = [],
     devise,
   } = donnees;
 
-  const totalCommissionsLaveurs = Number(
-    statistiques?.commissionsTotales || 0
+  const totalDepensesPayees = Number(
+    statistiques?.totalDepensesPayees ?? 0
+  );
+
+  const totalDepensesEnAttente = Number(
+    statistiques?.totalDepensesEnAttente ?? 0
   );
 
   const beneficeNet = Number(
-    statistiques?.beneficeNet ?? 0
+    statistiques?.beneficeNet ??
+      (
+        Number(statistiques?.chiffreAffaires ?? 0) -
+        Number(statistiques?.commissionsTotales ?? 0) -
+        totalDepensesPayees
+      )
+  );
+
+  const totalCommissionsLaveurs = Number(
+    statistiques?.commissionsTotales || 0
   );
 
   const maxEvolution = Math.max(
@@ -290,6 +304,15 @@ export default function LavageDashboardPage() {
             icon={Wallet}
             couleurValeur="#1100ac"
           />
+
+          <Indicateur
+            titre="Dépenses payées"
+            valeur={montant(totalDepensesPayees, devise)}
+            detail="Dépenses payées aujourd’hui"
+            icon={Wallet}
+            couleurValeur="#B45309"
+          />
+
           
         </div>
       </section>
@@ -402,6 +425,112 @@ export default function LavageDashboardPage() {
           </div>
         </div>
       </section>
+
+      
+      {/* Dépenses de la journée 
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col justify-between gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="font-bold text-[#14233B]">
+              Dépenses de la journée
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Dépenses payées et dépenses en attente de règlement.
+            </p>
+          </div>
+
+          <Link
+            href="/dashboard/lavage/depense"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#14233B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#20385B]"
+          >
+            Gérer les dépenses
+            <ArrowRight size={16} />
+          </Link>
+        </div>
+
+        <div className="grid gap-3 border-b border-slate-100 p-5 sm:grid-cols-2">
+          <div className="rounded-xl bg-amber-50 p-4">
+            <p className="text-sm text-amber-800">
+              Total payé
+            </p>
+            <p className="mt-2 text-xl font-bold text-amber-900">
+              {montant(totalDepensesPayees, devise)}
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-sm text-slate-500">
+              Total en attente
+            </p>
+            <p className="mt-2 text-xl font-bold text-[#14233B]">
+              {montant(totalDepensesEnAttente, devise)}
+            </p>
+          </div>
+        </div>
+
+        {depensesDuJour.length === 0 ? (
+          <div className="p-8 text-center">
+            <Receipt size={30} className="mx-auto text-slate-300" />
+
+            <p className="mt-3 font-medium text-slate-700">
+              Aucune dépense aujourd’hui
+            </p>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Les dépenses enregistrées apparaîtront ici.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {depensesDuJour.map((depense) => {
+              const payee = depense.statut === "payee";
+
+              return (
+                <div
+                  key={depense.id}
+                  className="flex flex-col justify-between gap-3 p-4 sm:flex-row sm:items-center sm:px-5"
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[#14233B]">
+                      {depense.libelle}
+                    </p>
+
+                    <p className="mt-1 text-xs text-slate-500">
+                      {depense.categorie || "Autre"}
+                      {" · "}
+                      {dateHeure(depense.date_depense)}
+                    </p>
+
+                    {depense.notes && (
+                      <p className="mt-1 text-sm text-slate-500">
+                        {depense.notes}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 sm:justify-end">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        payee
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      {payee ? "Payée" : "En attente"}
+                    </span>
+
+                    <span className="whitespace-nowrap font-bold text-[#14233B]">
+                      {montant(depense.montant, devise)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>*/}
+
 
       {/* Derniers lavages */}
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">

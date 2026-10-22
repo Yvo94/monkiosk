@@ -140,7 +140,7 @@ export async function GET(request) {
       error: stationError,
     } = await stationQuery;
 
-    console.log("[LAVAGE] Diagnostic station :", {
+    /*console.log("[LAVAGE] Diagnostic station :", {
       utilisateurId: user.id,
       stationDemandee: stationId,
       nombreStations: stations?.length ?? 0,
@@ -156,7 +156,7 @@ export async function GET(request) {
             hint: stationError.hint,
           }
         : null,
-    });
+    });*/
 
     if (stationError) {
       console.error(
@@ -234,6 +234,7 @@ export async function GET(request) {
       caisseResult,
       prestationsResult,
       laveursResult,
+      depensesTodayResult,
     ] = await Promise.all([
       // Prestations terminées aujourd'hui
       supabase
@@ -316,6 +317,24 @@ export async function GET(request) {
         .select("id", { count: "exact", head: true })
         .eq("lavage_id", station.id)
         .eq("actif", true),
+
+            // Dépenses de la journée
+      supabase
+        .from("lavage_depenses")
+        .select(`
+          id,
+          libelle,
+          categorie,
+          montant,
+          date_depense,
+          mode_paiement,
+          statut,
+          notes
+        `)
+        .eq("lavage_id", station.id)
+        .gte("date_depense", debutJour(today))
+        .lt("date_depense", debutJour(tomorrow))
+        .order("date_depense", { ascending: false }),
     ]);
 
     // -------------------------------------------------------
@@ -330,6 +349,7 @@ export async function GET(request) {
       ["caisses", caisseResult],
       ["catalogue des prestations", prestationsResult],
       ["laveurs", laveursResult],
+      ["dépenses du jour", depensesTodayResult],
     ];
 
     const failedResult = results.find(
@@ -362,6 +382,18 @@ export async function GET(request) {
     const servicesSevenDays = servicesSevenDaysResult.data || [];
     const paymentsToday = paymentsTodayResult.data || [];
     const caisses = caisseResult.data || [];
+    const depensesToday = depensesTodayResult.data || [];
+
+    const depensesPayees = depensesToday.filter(
+      (depense) => depense.statut === "payee"
+    );
+
+    const totalDepensesPayees = depensesPayees.reduce(
+      (total, depense) => total + montant(depense.montant),
+      0
+    );
+
+    
 
     // -------------------------------------------------------
     // 8. Calculer les statistiques journalières
@@ -372,7 +404,7 @@ export async function GET(request) {
         sum + montant(service.montant_total),
       0
     );
-
+    
     const encaissements = paymentsToday.reduce(
       (sum, payment) =>
         sum + montant(payment.montant),
@@ -408,6 +440,12 @@ export async function GET(request) {
         sum + montant(caisse.solde_actuel),
       0
     );
+
+    const resultatApresCommissions =
+      chiffreAffaires - commissionsTotales;
+
+    const beneficeNet =
+      resultatApresCommissions - totalDepensesPayees;
 
     // -------------------------------------------------------
     // 9. Regrouper les commissions par laveur
@@ -491,36 +529,37 @@ export async function GET(request) {
       devise,
 
       statistiques: {
-  chiffreAffaires,
-  encaissements,
+        chiffreAffaires,
+        encaissements,
 
-  prestationsTerminees: servicesToday.length,
+        prestationsTerminees: servicesToday.length,
 
-  panierMoyen:
-    servicesToday.length > 0
-      ? chiffreAffaires / servicesToday.length
-      : 0,
+        panierMoyen:
+          servicesToday.length > 0
+            ? chiffreAffaires / servicesToday.length
+            : 0,
 
-  commissionsTotales,
-  commissionsPayees,
-  commissionsAPayer,
+        commissionsTotales,
+        commissionsPayees,
+        commissionsAPayer,
 
-  resultatApresCommissions:
-    chiffreAffaires - commissionsTotales,
+        resultatApresCommissions,
 
-  // Estimation avant déduction des autres dépenses
-  beneficeNet:
-    chiffreAffaires - commissionsTotales,
+        totalDepensesPayees,
 
-  soldeCaisses,
-  caissesActives: caisses.length,
+        nombreDepenses: depensesToday.length,
 
-  prestationsConfigurees:
-    prestationsResult.count || 0,
+        beneficeNet,
 
-  laveursActifs:
-    laveursResult.count || 0,
-      },
+        soldeCaisses,
+        caissesActives: caisses.length,
+
+        prestationsConfigurees:
+          prestationsResult.count || 0,
+
+        laveursActifs:
+          laveursResult.count || 0,
+        },
       commissionsParLaveur:
         Array.from(commissionsParLaveur.values()),
 
@@ -528,6 +567,8 @@ export async function GET(request) {
 
       derniersServices:
         recentServicesResult.data || [],
+        
+      depensesDuJour: depensesToday,
 
       dateStatistiques: today,
     });

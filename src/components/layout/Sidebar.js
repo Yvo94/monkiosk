@@ -95,19 +95,19 @@ const lavageMenuItems = [
     href: "/dashboard/lavage/tarifs",
     icon: Tags,
   },
-  {
+  /*{
     label: "Clients",
     href: "/dashboard/lavage/clients",
     icon: UserRound,
   },
-  /*{
+  {
     label: "Encaissements",
     href: "/dashboard/lavage/encaissements",
     icon: WalletCards,
   },*/
   {
     label: "Dépenses",
-    href: "/dashboard/lavage/depenses",
+    href: "/dashboard/lavage/depense",
     icon: ShoppingBag,
   },
   {
@@ -121,8 +121,8 @@ const lavageMenuItems = [
     icon: WalletCards,
   },*/
   {
-    label: "Utilisateurs et accès",
-    href: "/dashboard/lavage/configuration/utilisateurs",
+    label: "Paramètres",
+    href: "/dashboard/lavage/configuration/Parametres",
     icon: Settings,
   },
 ];
