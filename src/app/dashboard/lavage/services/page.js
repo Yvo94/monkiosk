@@ -43,7 +43,7 @@ const EMPTY_FORM = {
   prestation_id: "",
   laveur_id: "",
   caisse_id: "",
-  mode_paiement: "",
+  mode_paiement: "especes",
   reference_paiement: "",
   immatriculation: "",
   marque: "",
@@ -310,7 +310,7 @@ function StatCard({ label, value, description, icon: Icon }) {
 
 export default function ServicesPage() {
   const [form, setForm] = useState(EMPTY_FORM);
-  const [quantite, setQuantite] = useState(1);
+  const [quantite, setQuantite] = useState(0);
   const [step, setStep] = useState(1);
 
   const [stations, setStations] = useState([]);
@@ -599,7 +599,7 @@ export default function ServicesPage() {
     setError("");
     setSuccess("");
     setStep(1);
-    setQuantite(1);
+    setQuantite(0);
     setVehicleSearch("");
 
     setForm((prev) => ({
@@ -699,7 +699,10 @@ export default function ServicesPage() {
       setStep(2);
       return;
     }
-
+    if (Number(quantite) === 0) {
+        setQuantite(1);;
+        return;
+    }
     if (
       !Number.isInteger(Number(quantite)) ||
       Number(quantite) < 1 ||
@@ -714,10 +717,10 @@ export default function ServicesPage() {
       return;
     }
 
-    if (!form.immatriculation.trim() && !form.client_nom.trim()) {
+    /*if (!form.immatriculation.trim() && !form.client_nom.trim()) {
       setError("Renseigne l'immatriculation ou le nom du client.");
       return;
-    }
+    }*/
 
     if (
       form.client_email.trim() &&
