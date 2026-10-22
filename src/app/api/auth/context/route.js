@@ -16,15 +16,13 @@ export async function GET(request) {
       );
     }
 
-    const cookieStore = await cookies();
-
     const supabase = createServerClient(url, key, {
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
         setAll() {
-          
+          // Aucun renouvellement de cookie dans cette route.
         },
       },
     });
