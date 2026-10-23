@@ -582,6 +582,8 @@ export default function NouvelleOperationModal({
     }
 
     const quantity = Number(quantite);
+    const dateService = String(form.date_service || "").slice(0, 10);
+    const dateAujourdhui = String(getTodayAbidjan() || "").slice(0, 10);
 
     if (!form.date_service) {
         setError("Sélectionne la date de l'opération.");
@@ -589,7 +591,7 @@ export default function NouvelleOperationModal({
         return;
     }
 
-    if (form.date_service > getTodayAbidjan()) {
+    if (dateService > dateAujourdhui) {
         setError("La date de l'opération ne peut pas être dans le futur.");
         setStep(1);
         return;
