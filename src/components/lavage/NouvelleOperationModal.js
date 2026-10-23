@@ -395,6 +395,11 @@ export default function NouvelleOperationModal({
       const nextTarifs = results[3].data || [];
       const nextCaisses = results[4].data || [];
 
+      const caissePrincipale = nextCaisses.find(
+        (c) =>
+          String(c.code || "").trim().toUpperCase() === "PRINCIPALE"
+      );
+
       setTypes(nextTypes);
       setPrestations(nextPrestations);
       setLaveurs(nextLaveurs);
@@ -419,13 +424,10 @@ export default function NouvelleOperationModal({
         )
           ? previous.laveur_id
           : "",
-        caisse_id: nextCaisses.some(
-          (item) => item.id === previous.caisse_id
-        )
-          ? previous.caisse_id
-          : nextCaisses.length === 1
-            ? nextCaisses[0].id
-            : "",
+        caisse_id:
+          caissePrincipale?.id ||
+          nextCaisses[0]?.id ||
+          "",
       }));
     } catch (exception) {
       setError(exception.message || "Erreur lors du chargement.");

@@ -544,27 +544,37 @@ export default function ServicesPage() {
       setTarifs(nextTarifs);
       setCaisses(nextCaisses);
 
+      const caissePrincipale = nextCaisses.find(
+        (c) =>
+          String(c.code || "").trim().toUpperCase() === "PRINCIPALE"
+      );
+
       setForm((prev) => ({
         ...prev,
         lavage_id: lavageId,
+
         type_vehicule_id: nextTypes.some(
           (x) => x.id === prev.type_vehicule_id
         )
           ? prev.type_vehicule_id
           : "",
+
         prestation_id: nextPrestations.some(
           (x) => x.id === prev.prestation_id
         )
           ? prev.prestation_id
           : "",
-        laveur_id: nextLaveurs.some((x) => x.id === prev.laveur_id)
+
+        laveur_id: nextLaveurs.some(
+          (x) => x.id === prev.laveur_id
+        )
           ? prev.laveur_id
           : "",
-        caisse_id: nextCaisses.some((x) => x.id === prev.caisse_id)
-          ? prev.caisse_id
-          : nextCaisses.length === 1
-            ? nextCaisses[0].id
-            : "",
+
+        caisse_id:
+          caissePrincipale?.id ||
+          nextCaisses[0]?.id ||
+          "",
       }));
     } catch (e) {
       setError(e.message || "Impossible de charger le catalogue.");
@@ -734,16 +744,26 @@ export default function ServicesPage() {
       ...EMPTY_FORM,
       lavage_id: prev.lavage_id,
       date_service: getTodayAbidjan(),
-      caisse_id: caisses.length === 1 ? caisses[0].id : "",
+      caisse_id:
+        caisses.find(
+          (c) => String(c.code || "").trim().toUpperCase() === "PRINCIPALE"
+        )?.id || caisses[0]?.id || "",
     }));
 
     setModalOpen(true);
   }
 
   function changeStation(value) {
+    const caissePrincipale = caisses.find(
+      (c) =>
+        c.lavage_id === value &&
+        String(c.code || "").trim().toUpperCase() === "PRINCIPALE"
+    );
+
     setForm({
       ...EMPTY_FORM,
       lavage_id: value,
+      caisse_id: caissePrincipale?.id || "",
     });
 
     setOperations([]);
