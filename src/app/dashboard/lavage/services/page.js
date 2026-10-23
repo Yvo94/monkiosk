@@ -38,7 +38,7 @@ const PAYMENT_MODES = [
   ["autre", "Autre"],
 ];
 
-
+//OK
 function getTodayAbidjan() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Africa/Abidjan",
