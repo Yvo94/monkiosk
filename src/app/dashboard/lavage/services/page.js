@@ -38,7 +38,7 @@ const PAYMENT_MODES = [
   ["autre", "Autre"],
 ];
 
-//OK
+
 function getTodayAbidjan() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Africa/Abidjan",
@@ -47,7 +47,6 @@ function getTodayAbidjan() {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
     hourCycle: "h23",
   }).formatToParts(new Date());
 
@@ -55,7 +54,8 @@ function getTodayAbidjan() {
     parts.map((part) => [part.type, part.value])
   );
 
-  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`;
+  // Format compatible avec un champ HTML datetime-local
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
 }
 
 function getDateServicePourEnvoi(value) {
@@ -76,11 +76,6 @@ function getDateServicePourEnvoi(value) {
   return `${date}T${heure}:${minute}:${seconde}`;
 }
 
-  
-const values = Object.fromEntries(
-    parts.map((part) => [part.type, part.value])
-  );
-
 const EMPTY_FORM = {
   lavage_id: "",
   date_service: getTodayAbidjan(),
@@ -99,6 +94,7 @@ const EMPTY_FORM = {
   client_email: "",
   notes: "",
 };
+
 
 function money(value, devise = "FCFA") {
   return `${new Intl.NumberFormat("fr-FR", {
