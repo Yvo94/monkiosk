@@ -50,6 +50,25 @@ function getTodayAbidjan() {
     hourCycle: "h23",
   }).formatToParts(new Date());
 
+function getDateServicePourEnvoi(value) {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+
+  // Accepte datetime-local au format YYYY-MM-DDTHH:mm
+  // ou YYYY-MM-DDTHH:mm:ss.
+  const match = value.match(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const [, date, heure, minute, seconde = "00"] = match;
+
+  return `${date}T${heure}:${minute}:${seconde}`;
+}
   const values = Object.fromEntries(
     parts.map((part) => [part.type, part.value])
   );
@@ -850,8 +869,22 @@ export default function ServicesPage() {
 
     const quantiteFinale = Number(quantite);
 
+    const dateService = getDateServicePourEnvoi(form.date_service);
+
+    if (!dateService) {
+      setError("La date et l'heure de l'opération sont obligatoires.");
+      setStep(1);
+      return;
+    }
+
+    if (dateService > getTodayAbidjan()) {
+      setError("La date de l'opération ne peut pas être dans le futur.");
+      setStep(1);
+      return;
+    }
+
     const payload = {
-      date_service: form.date_service,
+      date_service: dateService,
       type_vehicule_id: form.type_vehicule_id,
       laveur_id: form.laveur_id,
       caisse_id: form.caisse_id,

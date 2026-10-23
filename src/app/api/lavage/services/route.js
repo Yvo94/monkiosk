@@ -217,6 +217,7 @@ async function getOperations(supabase, lavageId) {
   }));
 }
 
+
 function validatePayload(payload) {
   if (
     !payload ||
@@ -226,21 +227,48 @@ function validatePayload(payload) {
     return "Les données de l'opération sont invalides.";
   }
 
-    // Date et heure de l'opération obligatoires
+  // Accepte YYYY-MM-DDTHH:mm et YYYY-MM-DDTHH:mm:ss
   if (
     typeof payload.date_service !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(
       payload.date_service
     )
   ) {
     return "La date et l'heure de l'opération sont obligatoires.";
   }
 
-  const dateService = new Date(
-    `${payload.date_service}+00:00`
+  // Normalisation des secondes pour l'analyse de la date.
+  const dateServiceNormalisee =
+    payload.date_service.length === 16
+      ? `${payload.date_service}:00`
+      : payload.date_service;
+
+  // Vérifie la cohérence réelle de la date et de l'heure.
+  const correspondance = dateServiceNormalisee.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/
   );
 
-  if (Number.isNaN(dateService.getTime())) {
+  if (!correspondance) {
+    return "La date et l'heure de l'opération sont invalides.";
+  }
+
+  const [, annee, mois, jour, heure, minute, seconde] =
+    correspondance.map((value, index) =>
+      index === 0 ? value : Number(value)
+    );
+
+  const dateVerifiee = new Date(
+    Date.UTC(annee, mois - 1, jour, heure, minute, seconde)
+  );
+
+  if (
+    dateVerifiee.getUTCFullYear() !== annee ||
+    dateVerifiee.getUTCMonth() !== mois - 1 ||
+    dateVerifiee.getUTCDate() !== jour ||
+    dateVerifiee.getUTCHours() !== heure ||
+    dateVerifiee.getUTCMinutes() !== minute ||
+    dateVerifiee.getUTCSeconds() !== seconde
+  ) {
     return "La date et l'heure de l'opération sont invalides.";
   }
 
@@ -304,6 +332,7 @@ function validatePayload(payload) {
 
   return null;
 }
+
 
 // GET /api/lavage/services
 // Sans lavage_id : retourne les stations.
