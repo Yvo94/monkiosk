@@ -22,10 +22,6 @@ import {
   Trash2,
   X,
   CheckCircle2,
-  ArrowDownLeft,
-  ArrowLeft,
-  ArrowLeftRight,
-  ArrowUpRight,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 

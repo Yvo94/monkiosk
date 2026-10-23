@@ -58,7 +58,7 @@ const EMPTY_FORM = {
   prestation_id: "",
   date_service: getTodayAbidjan(),
   laveur_id: "",
-  caisse_id: "",
+  caisse_id: "PRINCIPALE",
   mode_paiement: "especes",
   reference_paiement: "",
   immatriculation: "",
