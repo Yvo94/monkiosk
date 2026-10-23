@@ -115,11 +115,11 @@ const lavageMenuItems = [
     href: "/dashboard/lavage/statistiques",
     icon: BarChart3,
   },
-  /*{
-    label: "Caisses",
-    href: "/dashboard/lavage/configuration/caisses",
+  {
+    label: "Caisses / Coffres",
+    href: "/dashboard/lavage/caisse",
     icon: WalletCards,
-  },*/
+  },
   {
     label: "Paramètres",
     href: "/dashboard/lavage/configuration/Parametres",
