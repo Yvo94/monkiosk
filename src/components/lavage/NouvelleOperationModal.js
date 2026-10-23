@@ -49,7 +49,7 @@ function getTodayAbidjan() {
     parts.map(({ type, value }) => [type, value])
   );
 
-  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`;
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
 }
 
 const EMPTY_FORM = {
