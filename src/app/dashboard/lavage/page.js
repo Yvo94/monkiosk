@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import NouvelleOperationModal from "@/components/lavage/NouvelleOperationModal";
+import GuideInteractif from "@/components/guide/GuideInteractif";
 import Link from "next/link";
 import {
   CarFront,
@@ -443,7 +444,7 @@ export default function LavageDashboardPage() {
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 overflow-x-clip px-3 py-4 sm:space-y-8 sm:px-5 sm:py-6 md:px-8 md:py-8">
       {/* En-tête */}
-      <section className="relative overflow-hidden rounded-3xl bg-[#14233B] p-4 text-white shadow-lg sm:p-6 md:p-9">
+      <section data-guide="dashboard" className="relative overflow-hidden rounded-3xl bg-[#14233B] p-4 text-white shadow-lg sm:p-6 md:p-9">
         <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full border-[25px] border-white/[0.04] sm:h-56 sm:w-56" />
         <div className="pointer-events-none absolute -bottom-16 right-20 h-36 w-36 rounded-full bg-[#D8BD83]/[0.07] blur-2xl" />
 
@@ -473,6 +474,7 @@ export default function LavageDashboardPage() {
 
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
             <button
+              data-guide="nouvelle-operation"
               type="button"
               onClick={() => setModalNouvelleOperation(true)}
               className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#D8BD83] px-4 py-3 text-sm font-bold text-[#14233B] shadow-sm transition hover:bg-[#e6ce98] active:scale-[0.99] sm:px-5"
@@ -562,7 +564,7 @@ export default function LavageDashboardPage() {
       )}
 
       {/* Indicateurs du jour */}
-      <section>
+      <section data-guide="indicateurs">
         <SectionTitre
           titre={
             dateDebut === dateFin
@@ -694,7 +696,7 @@ export default function LavageDashboardPage() {
           )}
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <div data-guide="etat-station" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B]">
               <Wallet size={20} />
@@ -757,17 +759,17 @@ export default function LavageDashboardPage() {
           </div>
 
           <Link
-            href="/dashboard/lavage/encaissements"
+            href="/dashboard/lavage/services"
             className="mt-3 flex min-h-12 items-center justify-between gap-3 rounded-xl bg-[#14233B] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#20385B] active:scale-[0.99]"
           >
-            <span>Voir les encaissements</span>
+            <span>Voir les prestations</span>
             <ArrowRight size={17} className="shrink-0" />
           </Link>
         </div>
       </section>
 
       {/* Prévisions du chiffre d'affaires */}
-      <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <section data-guide="previsions" className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-[#D8BD83]/20 p-2.5 text-[#14233B]">
@@ -1000,7 +1002,7 @@ export default function LavageDashboardPage() {
       </section>
 
       {/* Gestion */}
-      <section>
+      <section data-guide="gestion">
         <SectionTitre
           titre="Gestion de la station"
           description="Retrouvez rapidement les fonctionnalités du module."
@@ -1168,6 +1170,7 @@ export default function LavageDashboardPage() {
           chargerDashboard({ silencieux: true });
         }}
       />
+      <GuideInteractif />
     </main>
   );
 }
