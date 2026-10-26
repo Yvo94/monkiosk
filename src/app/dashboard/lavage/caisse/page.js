@@ -7,6 +7,7 @@ import {
   ArrowDownLeft,
   ArrowLeft,
   ArrowUpRight,
+  ArrowLeftRight,
   Banknote,
   CalendarDays,
   RefreshCw,
@@ -22,6 +23,7 @@ import {
   Trash2,
   X,
   CheckCircle2,
+  SlidersHorizontal,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 
@@ -84,6 +86,8 @@ const libelleType = (type) => {
     ouverture: "Ouverture",
     solde_initial: "Solde initial",
     ajustement: "Ajustement",
+    ajustement_entree: "Ajustement — ajout",
+    ajustement_sortie: "Ajustement — retrait",
   };
 
   return (
@@ -137,6 +141,18 @@ export default function CaisseLavagePage() {
   const [caisseEnSuppression, setCaisseEnSuppression] = useState(null);
   const [suppressionEnCours, setSuppressionEnCours] = useState(false);
   const [actionCaisseId, setActionCaisseId] = useState(null);
+
+  const [estAdmin, setEstAdmin] = useState(false);
+  const [modalAjustement, setModalAjustement] = useState(false);
+  const [caisseAjustement, setCaisseAjustement] = useState(null);
+  const [ajustementEnCours, setAjustementEnCours] = useState(false);
+  const [erreurAjustement, setErreurAjustement] = useState("");
+
+  const [formAjustement, setFormAjustement] = useState({
+    sens: "entree",
+    montant: "",
+    motif: "",
+  });
 
   const [modalTransfert, setModalTransfert] = useState(false);
   const [transfertEnCours, setTransfertEnCours] = useState(false);
@@ -309,6 +325,16 @@ export default function CaisseLavagePage() {
             "Votre session a expiré. Veuillez vous reconnecter."
           );
         }
+
+        const { data: profil, error: erreurProfil } = await supabase
+          .from("users")
+          .select("role, actif")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (erreurProfil) throw erreurProfil;
+
+        setEstAdmin(profil?.role === "admin" && profil?.actif === true);
 
         const { data: stationsData, error: erreurStations } = await supabase
           .from("lavages")
@@ -669,6 +695,175 @@ export default function CaisseLavagePage() {
     }
   };
 
+  const confirmerAjustement = async (event) => {
+    event.preventDefault();
+
+    setErreurAjustement("");
+    setErreur("");
+    setMessageSucces("");
+
+    if (!estAdmin) {
+      setErreurAjustement(
+        "Seul un administrateur peut ajuster une caisse."
+      );
+      return;
+    }
+
+    if (!caisseAjustement) {
+      setErreurAjustement("Aucune caisse sélectionnée.");
+      return;
+    }
+
+    const montant = Number(formAjustement.montant);
+    const motif = formAjustement.motif.trim();
+
+    if (!Number.isSafeInteger(montant) || montant <= 0) {
+      setErreurAjustement(
+        "Le montant doit être un entier positif en FCFA."
+      );
+      return;
+    }
+
+    if (!motif) {
+      setErreurAjustement("Le motif est obligatoire.");
+      return;
+    }
+
+    if (
+      formAjustement.sens === "sortie" &&
+      montant > Number(caisseAjustement.solde_actuel)
+    ) {
+      setErreurAjustement("Le solde de la caisse est insuffisant.");
+      return;
+    }
+
+    setAjustementEnCours(true);
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "lavage_ajuster_solde_caisse",
+        {
+          p_caisse_id: caisseAjustement.id,
+          p_sens: formAjustement.sens,
+          p_montant: montant,
+          p_motif: motif,
+        }
+      );
+
+      if (error) throw error;
+
+      if (!data) {
+        throw new Error(
+          "La base de données n'a retourné aucune référence de mouvement."
+        );
+      }
+
+      setModalAjustement(false);
+      setCaisseAjustement(null);
+      setFormAjustement({
+        sens: "entree",
+        montant: "",
+        motif: "",
+      });
+
+      setMessageSucces(
+        `Ajustement de ${formatMontant(montant)} enregistré.`
+      );
+
+      await chargerDonnees({ silencieux: true });
+    } catch (err) {
+      console.error("Erreur d'ajustement de caisse :", err);
+      setErreurAjustement(erreurSupabase(err));
+    } finally {
+      setAjustementEnCours(false);
+    }
+  };
+
+  const confirmerTransfert = async (event) => {
+    event.preventDefault();
+
+    setErreurTransfert("");
+    setErreur("");
+    setMessageSucces("");
+
+    const sourceId = formTransfert.caisse_source_id;
+    const destinationId = formTransfert.caisse_destination_id;
+    const montant = Number(formTransfert.montant);
+
+    if (!sourceId || !destinationId) {
+      setErreurTransfert("Sélectionnez les deux caisses.");
+      return;
+    }
+
+    if (sourceId === destinationId) {
+      setErreurTransfert(
+        "La caisse source et la caisse destination doivent être différentes."
+      );
+      return;
+    }
+
+    if (!Number.isSafeInteger(montant) || montant <= 0) {
+      setErreurTransfert(
+        "Le montant doit être un nombre entier positif en FCFA."
+      );
+      return;
+    }
+
+    if (montant > Number(caisseSourceTransfert?.solde_actuel ?? 0)) {
+      setErreurTransfert("Le solde de la caisse source est insuffisant.");
+      return;
+    }
+
+    setTransfertEnCours(true);
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "lavage_transferer_entre_caisses",
+        {
+          p_caisse_source_id: sourceId,
+          p_caisse_destination_id: destinationId,
+          p_montant: montant,
+          p_motif: formTransfert.motif.trim() || null,
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data) {
+        throw new Error(
+          "Aucune référence de transfert n'a été retournée par la base de données."
+        );
+      }
+
+      setModalTransfert(false);
+
+      setFormTransfert({
+        caisse_source_id: "",
+        caisse_destination_id: "",
+        montant: "",
+        motif: "",
+      });
+
+      setMessageSucces(
+        `Transfert de ${formatMontant(montant)} effectué avec succès.`
+      );
+
+      // Recharger les soldes et l'historique.
+      await chargerDonnees({ silencieux: true });
+    } catch (err) {
+      console.error("Erreur de transfert entre caisses :", err);
+      setErreurTransfert(
+        erreurSupabase(err) ||
+          "Une erreur est survenue lors du transfert."
+      );
+    } finally {
+      setTransfertEnCours(false);
+    }
+  };
+
+
   const demanderSuppression = (caisse) => {
     setErreur("");
     setMessageSucces("");
@@ -721,6 +916,48 @@ export default function CaisseLavagePage() {
             >
               <Plus className="h-4 w-4" />
               Nouvelle caisse
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setErreurTransfert("");
+                setMessageSucces("");
+
+                const source =
+                  caissesActives.find(
+                    (c) => c.code?.toUpperCase() === "PRINCIPALE"
+                  ) ||
+                  caissesActives.find(
+                    (c) => c.nom?.toLowerCase().includes("principale")
+                  );
+
+                const destination =
+                  caissesActives.find(
+                    (c) =>
+                      c.id !== source?.id &&
+                      c.code?.toUpperCase() === "SECONDAIRE"
+                  ) ||
+                  caissesActives.find(
+                    (c) =>
+                      c.id !== source?.id &&
+                      c.nom?.toLowerCase().includes("secondaire")
+                  );
+
+                setFormTransfert({
+                  caisse_source_id: source?.id || "",
+                  caisse_destination_id: destination?.id || "",
+                  montant: "25000",
+                  motif: "",
+                });
+
+                setModalTransfert(true);
+              }}
+              disabled={caissesActives.length < 2 || !lavageId}
+              className={boutonBase}
+              style={{ backgroundColor: COULEUR_OR, color: COULEUR_BLEU }}
+            >
+              <ArrowLeftRight className="h-4 w-4" />
+              Transfert entre caisses
             </button>
 
             <button
@@ -959,6 +1196,50 @@ export default function CaisseLavagePage() {
                           <Pencil className="h-3.5 w-3.5" />
                           Modifier
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setErreurTransfert("");
+                            setMessageSucces("");
+
+                            setFormTransfert({
+                              caisse_source_id: caisse.id,
+                              caisse_destination_id: "",
+                              montant: "",
+                              motif: "",
+                            });
+
+                            setModalTransfert(true);
+                          }}
+                          disabled={!caisse.actif || caissesActives.length < 2}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <ArrowLeftRight className="h-3.5 w-3.5" />
+                          Transférer
+                        </button>
+
+                        {estAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCaisseAjustement(caisse);
+                              setFormAjustement({
+                                sens: "entree",
+                                montant: "",
+                                motif: "",
+                              });
+                              setErreurAjustement("");
+                              setModalAjustement(true);
+                              setMessageSucces("");
+                            }}
+                            disabled={!caisse.actif}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-800 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <SlidersHorizontal className="h-3.5 w-3.5" />
+                            Ajustement
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -1453,6 +1734,411 @@ export default function CaisseLavagePage() {
           </div>
         </div>
       )}
+      
+      {modalTransfert && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titre-modal-transfert"
+            className="my-auto w-full max-w-lg rounded-2xl bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div>
+                <div className="mb-2 inline-flex rounded-xl bg-amber-50 p-2 text-amber-700">
+                  <ArrowLeftRight className="h-5 w-5" />
+                </div>
+
+                <h2
+                  id="titre-modal-transfert"
+                  className="text-lg font-bold"
+                  style={{ color: COULEUR_BLEU }}
+                >
+                  Transfert entre caisses
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Transférez un montant d’une caisse vers une autre caisse
+                  de cette station.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (transfertEnCours) return;
+                  setModalTransfert(false);
+                  setErreurTransfert("");
+                }}
+                disabled={transfertEnCours}
+                aria-label="Fermer"
+                className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={confirmerTransfert} className="space-y-4 p-5">
+              {erreurTransfert && (
+                <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{erreurTransfert}</p>
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Caisse source *
+                </label>
+
+                <select
+                  required
+                  value={formTransfert.caisse_source_id}
+                  onChange={(event) => {
+                    setFormTransfert((ancien) => ({
+                      ...ancien,
+                      caisse_source_id: event.target.value,
+                      caisse_destination_id:
+                        ancien.caisse_destination_id === event.target.value
+                          ? ""
+                          : ancien.caisse_destination_id,
+                    }));
+                    setErreurTransfert("");
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-slate-400"
+                >
+                  <option value="">Sélectionner la caisse source</option>
+
+                  {caissesActives.map((caisse) => (
+                    <option key={caisse.id} value={caisse.id}>
+                      {caisse.nom} — {caisse.code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {caisseSourceTransfert && (
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">
+                    Solde disponible de la caisse source
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-slate-900">
+                    {formatMontant(caisseSourceTransfert.solde_actuel)}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-center">
+                <div className="rounded-full border border-amber-200 bg-amber-50 p-2 text-amber-700">
+                  <ArrowDownLeft className="h-5 w-5" />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Caisse destinataire *
+                </label>
+
+                <select
+                  required
+                  value={formTransfert.caisse_destination_id}
+                  onChange={(event) => {
+                    setFormTransfert((ancien) => ({
+                      ...ancien,
+                      caisse_destination_id: event.target.value,
+                    }));
+                    setErreurTransfert("");
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-slate-400"
+                >
+                  <option value="">Sélectionner la caisse destinataire</option>
+
+                  {caissesDestinationsTransfert.map((caisse) => (
+                    <option key={caisse.id} value={caisse.id}>
+                      {caisse.nom} — {caisse.code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Montant à transférer (FCFA) *
+                </label>
+
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={formTransfert.montant}
+                  onChange={(event) => {
+                    setFormTransfert((ancien) => ({
+                      ...ancien,
+                      montant: event.target.value,
+                    }));
+                    setErreurTransfert("");
+                  }}
+                  placeholder="Ex. 25000"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-slate-400"
+                />
+
+                {caisseSourceTransfert &&
+                  Number(formTransfert.montant) > 0 &&
+                  Number(formTransfert.montant) >
+                    Number(caisseSourceTransfert.solde_actuel) && (
+                    <p className="mt-1.5 text-xs text-red-600">
+                      Le montant dépasse le solde disponible.
+                    </p>
+                  )}
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Motif du transfert
+                </label>
+
+                <textarea
+                  rows={2}
+                  maxLength={500}
+                  value={formTransfert.motif}
+                  onChange={(event) =>
+                    setFormTransfert((ancien) => ({
+                      ...ancien,
+                      motif: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex. Réapprovisionnement de la caisse secondaire"
+                  className="w-full resize-y rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-slate-400"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Facultatif.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                Le transfert sera enregistré dans les deux caisses au cours
+                d'une seule transaction sécurisée. Les soldes et l'historique
+                seront actualisés après confirmation de la base de données.
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalTransfert(false);
+                    setErreurTransfert("");
+                  }}
+                  disabled={transfertEnCours}
+                  className={`${boutonBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={
+                    transfertEnCours ||
+                    !formTransfert.caisse_source_id ||
+                    !formTransfert.caisse_destination_id ||
+                    formTransfert.caisse_source_id ===
+                      formTransfert.caisse_destination_id ||
+                    !Number.isInteger(Number(formTransfert.montant)) ||
+                    Number(formTransfert.montant) <= 0 ||
+                    !caisseSourceTransfert ||
+                    Number(formTransfert.montant) >
+                      Number(caisseSourceTransfert.solde_actuel)
+                  }
+                  className={boutonBase}
+                  style={{
+                    backgroundColor: COULEUR_BLEU,
+                    color: "white",
+                  }}
+                >
+                  {transfertEnCours ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowLeftRight className="h-4 w-4" />
+                  )}
+                  Confirmer le transfert
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      
+      {modalAjustement && caisseAjustement && estAdmin && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titre-modal-ajustement"
+            className="my-auto w-full max-w-lg rounded-2xl bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div>
+                <div className="mb-2 inline-flex rounded-xl bg-indigo-50 p-2 text-indigo-700">
+                  <SlidersHorizontal className="h-5 w-5" />
+                </div>
+                <h2
+                  id="titre-modal-ajustement"
+                  className="text-lg font-bold"
+                  style={{ color: COULEUR_BLEU }}
+                >
+                  Ajustement de caisse
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  {caisseAjustement.nom} — {caisseAjustement.code}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (ajustementEnCours) return;
+                  setModalAjustement(false);
+                  setCaisseAjustement(null);
+                  setErreurAjustement("");
+                }}
+                disabled={ajustementEnCours}
+                aria-label="Fermer"
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={confirmerAjustement} className="space-y-4 p-5">
+              {erreurAjustement && (
+                <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{erreurAjustement}</p>
+                </div>
+              )}
+
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">Solde actuel</p>
+                <p className="mt-1 text-2xl font-bold text-slate-900">
+                  {formatMontant(caisseAjustement.solde_actuel)}
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Type d'ajustement *
+                </label>
+                <select
+                  required
+                  value={formAjustement.sens}
+                  onChange={(event) =>
+                    setFormAjustement((ancien) => ({
+                      ...ancien,
+                      sens: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-slate-400"
+                >
+                  <option value="entree">Ajouter de l'argent</option>
+                  <option value="sortie">Retirer de l'argent</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Montant (FCFA) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={formAjustement.montant}
+                  onChange={(event) =>
+                    setFormAjustement((ancien) => ({
+                      ...ancien,
+                      montant: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex. 5000"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-slate-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Motif obligatoire *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  maxLength={500}
+                  value={formAjustement.motif}
+                  onChange={(event) =>
+                    setFormAjustement((ancien) => ({
+                      ...ancien,
+                      motif: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex. Correction après comptage physique de la caisse"
+                  className="w-full resize-y rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-slate-400"
+                />
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                L'ajustement modifiera le solde et sera inscrit dans
+                l'historique financier. Cette opération ne pourra pas être
+                considérée comme un transfert entre caisses.
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  disabled={ajustementEnCours}
+                  onClick={() => {
+                    setModalAjustement(false);
+                    setCaisseAjustement(null);
+                    setErreurAjustement("");
+                  }}
+                  className={`${boutonBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={
+                    ajustementEnCours ||
+                    !formAjustement.montant ||
+                    !Number.isSafeInteger(Number(formAjustement.montant)) ||
+                    Number(formAjustement.montant) <= 0 ||
+                    !formAjustement.motif.trim() ||
+                    (
+                      formAjustement.sens === "sortie" &&
+                      Number(formAjustement.montant) >
+                        Number(caisseAjustement.solde_actuel)
+                    )
+                  }
+                  className={boutonBase}
+                  style={{ backgroundColor: COULEUR_BLEU, color: "white" }}
+                >
+                  {ajustementEnCours ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
+                  {ajustementEnCours
+                    ? "Enregistrement..."
+                    : "Confirmer l'ajustement"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }

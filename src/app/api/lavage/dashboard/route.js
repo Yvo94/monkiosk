@@ -300,7 +300,7 @@ export async function GET(request) {
       // Caisses actives
       supabase
         .from("lavage_caisses")
-        .select("id, nom, solde_actuel")
+        .select("id, nom, code, solde_actuel")
         .eq("lavage_id", station.id)
         .eq("actif", true),
 
@@ -435,10 +435,22 @@ export async function GET(request) {
       0
     );
 
+    // Solde cumulé de toutes les caisses actives
     const soldeCaisses = caisses.reduce(
       (sum, caisse) =>
         sum + montant(caisse.solde_actuel),
       0
+    );
+
+    // Solde de la caisse principale
+    const caissePrincipale = caisses.find(
+      (caisse) =>
+        String(caisse.code || "").trim().toUpperCase() ===
+        "PRINCIPALE"
+    );
+
+    const soldeCaissePrincipale = montant(
+      caissePrincipale?.solde_actuel
     );
 
     const resultatApresCommissions =
@@ -552,6 +564,7 @@ export async function GET(request) {
         beneficeNet,
 
         soldeCaisses,
+        soldeCaissePrincipale,
         caissesActives: caisses.length,
 
         prestationsConfigurees:
