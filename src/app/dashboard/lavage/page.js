@@ -135,6 +135,11 @@ export default function LavageDashboardPage() {
   const [donnees, setDonnees] = useState(null);
   const [erreur, setErreur] = useState("");
   const [chargement, setChargement] = useState(true);
+
+  const [donneesPrevisions, setDonneesPrevisions] = useState(null);
+  const [chargementPrevisions, setChargementPrevisions] = useState(false);
+  const [erreurPrevisions, setErreurPrevisions] = useState("");
+
   const [modalNouvelleOperation, setModalNouvelleOperation] = useState(false);
   const [menuRapideOuvert, setMenuRapideOuvert] = useState(false);
 
@@ -250,6 +255,74 @@ export default function LavageDashboardPage() {
     });
   }, [dateDebut, dateFin, chargerDashboard]);
 
+
+  // Chargement des prévisions de la station active.
+  useEffect(() => {
+    const stationId = donnees?.station?.id;
+
+    if (!stationId) {
+      setDonneesPrevisions(null);
+      return;
+    }
+
+    let annule = false;
+
+    async function chargerPrevisions() {
+      setChargementPrevisions(true);
+      setErreurPrevisions("");
+
+      try {
+        const params = new URLSearchParams({
+          lavage_id: stationId,
+        });
+
+        const response = await fetch(
+          `/api/lavage/previsions?${params.toString()}`,
+          { cache: "no-store" }
+        );
+
+        if (response.status === 401) {
+          window.location.replace("/login");
+          return;
+        }
+
+        const resultat = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            resultat.error || "Impossible de charger les prévisions."
+          );
+        }
+
+        if (!annule) {
+          setDonneesPrevisions(resultat);
+        }
+      } catch (error) {
+        console.error(
+          "[Dashboard Lavage] Erreur prévisions :",
+          error
+        );
+
+        if (!annule) {
+          setErreurPrevisions(
+            error.message || "Erreur lors du chargement des prévisions."
+          );
+        }
+      } finally {
+        if (!annule) {
+          setChargementPrevisions(false);
+        }
+      }
+    }
+
+    chargerPrevisions();
+
+    return () => {
+      annule = true;
+    };
+  }, [donnees?.station?.id]);
+
+
   if (chargement && !donnees) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-5 text-center text-slate-500">
@@ -315,6 +388,45 @@ export default function LavageDashboardPage() {
     1,
     ...evolution.map((jour) => Number(jour.montant || 0))
   );
+
+  const previsions = donneesPrevisions?.previsions || [];
+
+  const totalPrevu = Number(
+    donneesPrevisions?.statistiques?.totalPrevu7Jours || 0
+  );
+
+  const fiabilitePrevisions =
+    donneesPrevisions?.statistiques?.fiabilite || "faible";
+
+  const maxPrevision = Math.max(
+    1,
+    ...previsions.map((jour) => Number(jour.montantPrevu || 0))
+  );
+
+  const formatterDatePrevision = (date) => {
+    const valeur = new Date(`${date}T12:00:00Z`);
+
+    if (Number.isNaN(valeur.getTime())) return date;
+
+    return new Intl.DateTimeFormat("fr-FR", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+      timeZone: "Africa/Abidjan",
+    }).format(valeur);
+  };
+
+  const libelleFiabilite = {
+    faible: "Faible",
+    moyenne: "Moyenne",
+    bonne: "Bonne",
+  }[fiabilitePrevisions] || "Faible";
+
+  const couleurFiabilite = {
+    faible: "bg-amber-100 text-amber-800",
+    moyenne: "bg-blue-100 text-blue-800",
+    bonne: "bg-emerald-100 text-emerald-800",
+  }[fiabilitePrevisions] || "bg-amber-100 text-amber-800";
 
   const formatterJour = (date) => {
     const valeur = new Date(`${date}T12:00:00Z`);
@@ -653,6 +765,147 @@ export default function LavageDashboardPage() {
           </Link>
         </div>
       </section>
+
+      {/* Prévisions du chiffre d'affaires */}
+      <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-[#D8BD83]/20 p-2.5 text-[#14233B]">
+              <TrendingUp size={21} />
+            </div>
+
+            <div>
+              <h2 className="font-bold text-[#14233B]">
+                Prévisions du chiffre d’affaires
+              </h2>
+
+              <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
+                Estimation statistique des sept prochains jours complets.
+              </p>
+            </div>
+          </div>
+
+          {!chargementPrevisions && donneesPrevisions && (
+            <span
+              className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${couleurFiabilite}`}
+            >
+              Fiabilité {libelleFiabilite.toLowerCase()}
+            </span>
+          )}
+        </div>
+
+        {chargementPrevisions && !donneesPrevisions ? (
+          <div className="flex min-h-40 items-center justify-center gap-3 text-sm text-slate-500">
+            <RefreshCw size={18} className="animate-spin" />
+            Calcul des prévisions...
+          </div>
+        ) : erreurPrevisions && !donneesPrevisions ? (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm text-amber-800">
+              {erreurPrevisions}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setDonnees((precedentes) =>
+                  precedentes ? { ...precedentes } : precedentes
+                );
+              }}
+              className="mt-3 text-sm font-semibold text-amber-900 underline"
+            >
+              Réessayer
+            </button>
+          </div>
+        ) : previsions.length === 0 ? (
+          <div className="mt-5 rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">
+            Aucune prévision disponible pour cette station.
+          </div>
+        ) : (
+          <>
+            <div className="mt-5 rounded-2xl bg-[#14233B] p-4 text-white sm:p-5">
+              <p className="text-xs font-medium text-slate-300 sm:text-sm">
+                CA prévisionnel total sur 7 jours
+              </p>
+
+              <p className="mt-2 break-words text-2xl font-bold tracking-tight text-[#D8BD83] sm:text-3xl">
+                {montant(totalPrevu, devise)}
+              </p>
+
+              <p className="mt-2 text-xs leading-5 text-slate-300">
+                Moyenne estimée :{" "}
+                {montant(
+                  Math.round(totalPrevu / previsions.length),
+                  devise
+                )}{" "}
+                par jour.
+              </p>
+            </div>
+
+            <div className="mt-6">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-[#14233B]">
+                  CA estimé par jour
+                </h3>
+
+                <span className="text-[11px] text-slate-500">
+                  {previsions.length} jours
+                </span>
+              </div>
+
+              <div className="grid grid-cols-7 gap-1.5 sm:gap-3">
+                {previsions.map((jour) => {
+                  const valeur = Number(jour.montantPrevu || 0);
+
+                  const hauteur =
+                    valeur === 0
+                      ? 3
+                      : Math.max(6, (valeur / maxPrevision) * 100);
+
+                  return (
+                    <div
+                      key={jour.date}
+                      className="flex min-w-0 flex-col items-center"
+                      title={`${formatterDatePrevision(jour.date)} : ${montant(valeur, devise)}`}
+                    >
+                      <span className="mb-2 min-h-8 break-words text-center text-[9px] font-semibold leading-4 text-slate-600 sm:text-[11px]">
+                        {valeur.toLocaleString("fr-FR")}
+                      </span>
+
+                      <div className="flex h-28 w-full items-end justify-center rounded-t-lg bg-slate-50 sm:h-36">
+                        <div
+                          className="w-full max-w-10 rounded-t-md bg-[#D8BD83] transition-all duration-500"
+                          style={{ height: `${hauteur}%` }}
+                        />
+                      </div>
+
+                      <span className="mt-2 text-center text-[9px] capitalize leading-4 text-slate-500 sm:text-[11px]">
+                        {formatterDatePrevision(jour.date)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-slate-200 p-3 sm:p-4">
+              <div className="flex items-start gap-2">
+                <AlertCircle
+                  size={17}
+                  className="mt-0.5 shrink-0 text-slate-500"
+                />
+
+                <p className="text-xs leading-5 text-slate-600">
+                  Ces montants sont des estimations statistiques, pas des
+                  recettes garanties. La fiabilité évoluera avec la quantité
+                  et la qualité des données historiques enregistrées.
+                </p>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
 
       {/* Derniers lavages */}
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
