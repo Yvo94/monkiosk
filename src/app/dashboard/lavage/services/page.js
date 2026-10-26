@@ -389,6 +389,15 @@ export default function ServicesPage() {
   const [historyDateFrom, setHistoryDateFrom] = useState("");
   const [historyDateTo, setHistoryDateTo] = useState("");
   const [currentDate, setCurrentDate] = useState(null);
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
+
+  const [filterLaveur, setFilterLaveur] = useState("");
+  const [filterTypeVehicule, setFilterTypeVehicule] = useState("");
+
+  const [tempDateFrom, setTempDateFrom] = useState("");
+  const [tempDateTo, setTempDateTo] = useState("");
+  const [tempLaveur, setTempLaveur] = useState("");
+  const [tempTypeVehicule, setTempTypeVehicule] = useState("");
 
   useEffect(() => {
     setCurrentDate(new Date());
@@ -975,6 +984,34 @@ export default function ServicesPage() {
     }
   }
 
+    function openFilterModal() {
+      setTempDateFrom(historyDateFrom);
+      setTempDateTo(historyDateTo);
+      setTempLaveur(filterLaveur);
+      setTempTypeVehicule(filterTypeVehicule);
+      setFilterModalOpen(true);
+    }
+
+    function applyFilters() {
+      if (tempDateFrom && tempDateTo && tempDateFrom > tempDateTo) {
+        setError("La date de début doit être antérieure ou égale à la date de fin.");
+        return;
+      }
+
+      setHistoryDateFrom(tempDateFrom);
+      setHistoryDateTo(tempDateTo);
+      setFilterLaveur(tempLaveur);
+      setFilterTypeVehicule(tempTypeVehicule);
+
+      // La période de la modale devient le filtre de dates principal.
+      setHistoryPeriod(
+        tempDateFrom || tempDateTo ? "custom" : "all"
+      );
+
+      setFilterModalOpen(false);
+      setError("");
+    }
+
   const filteredOperations = useMemo(() => {
     if (!currentDate) return [];
 
@@ -1021,6 +1058,44 @@ export default function ServicesPage() {
 
       if (from && date < from) return false;
       if (to && date > to) return false;
+
+            // Filtre par laveur
+      if (
+        filterLaveur &&
+        String(op.laveur?.id || op.laveur_id || "") !== filterLaveur
+      ) {
+        return false;
+      }
+
+      // Filtre par type de véhicule
+      if (filterTypeVehicule) {
+        const operationTypeId =
+          op.type_vehicule_id ||
+          op.vehicule?.type_vehicule_id ||
+          op.vehicule?.type_id ||
+          "";
+
+        const selectedType = types.find(
+          (type) => type.id === filterTypeVehicule
+        );
+
+        const operationTypeName =
+          op.type_vehicule?.nom ||
+          op.vehicule?.type_vehicule?.nom ||
+          op.vehicule?.type_vehicule_nom ||
+          "";
+
+        const matchesType =
+          String(operationTypeId) === filterTypeVehicule ||
+          (
+            selectedType &&
+            operationTypeName &&
+            operationTypeName.toLocaleLowerCase("fr") ===
+              selectedType.nom.toLocaleLowerCase("fr")
+          );
+
+        if (!matchesType) return false;
+      }
 
       const completed = isCompleted(op);
       const cancelled = isCancelled(op);
@@ -1085,6 +1160,9 @@ export default function ServicesPage() {
     historyDateFrom,
     historyDateTo,
     currentDate,
+    filterLaveur,
+    filterTypeVehicule,
+    types,
   ]);
 
   const completedOperations = filteredOperations.filter(isCompleted);
@@ -1110,7 +1188,7 @@ export default function ServicesPage() {
     ? chiffreAffaires / nombreOperations
     : 0;
 
-  function resetFilters() {
+    function resetFilters() {
     setHistorySearch("");
     setHistoryPeriod("today");
     setHistoryStatus("all");
@@ -1118,6 +1196,12 @@ export default function ServicesPage() {
     setHistorySort("date_desc");
     setHistoryDateFrom("");
     setHistoryDateTo("");
+    setFilterLaveur("");
+    setFilterTypeVehicule("");
+    setTempDateFrom("");
+    setTempDateTo("");
+    setTempLaveur("");
+    setTempTypeVehicule("");
   }
 
   if (loading) {
@@ -1301,6 +1385,15 @@ export default function ServicesPage() {
                 {filteredOperations.length} résultat(s) · {operations.length} opération(s) chargée(s)
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={openFilterModal}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#14233B] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#203754]"
+            >
+              <CalendarDays size={16} />
+              Filtrer
+            </button>
           </div>
 
           {/* FILTRES */}
@@ -1592,7 +1685,133 @@ export default function ServicesPage() {
         </section>
       </div>
 
-            
+      
+      {/* MODALE : FILTRER LES PRESTATIONS */}
+      {filterModalOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setFilterModalOpen(false);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="filters-title"
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
+            <header className="flex items-center justify-between gap-3 bg-[#14233B] px-5 py-4 text-white">
+              <div>
+                <h2 id="filters-title" className="font-bold">
+                  Filtrer les prestations
+                </h2>
+                <p className="mt-1 text-xs text-slate-300">
+                  Choisis une période, un laveur et un véhicule.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setFilterModalOpen(false)}
+                aria-label="Fermer les filtres"
+                className="rounded-lg p-2 text-white hover:bg-white/10"
+              >
+                <X size={19} />
+              </button>
+            </header>
+
+            <div className="space-y-4 p-5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Date de début">
+                  <Input
+                    type="date"
+                    value={tempDateFrom}
+                    max={tempDateTo || undefined}
+                    onChange={setTempDateFrom}
+                  />
+                </Field>
+
+                <Field label="Date de fin">
+                  <Input
+                    type="date"
+                    value={tempDateTo}
+                    min={tempDateFrom || undefined}
+                    onChange={setTempDateTo}
+                  />
+                </Field>
+              </div>
+
+              <Field label="Laveur">
+                <Select
+                  value={tempLaveur}
+                  onChange={setTempLaveur}
+                >
+                  <option value="">Tous les laveurs</option>
+                  {laveurs.map((laveur) => (
+                    <option key={laveur.id} value={laveur.id}>
+                      {laveur.nom}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field label="Type de véhicule">
+                <Select
+                  value={tempTypeVehicule}
+                  onChange={setTempTypeVehicule}
+                >
+                  <option value="">Tous les véhicules</option>
+                  {types.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.nom}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <p className="text-xs leading-5 text-slate-500">
+                Les filtres s’appliquent ensemble à l’historique et aux statistiques.
+                Laisse un champ vide pour ne pas limiter ce critère.
+              </p>
+
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempDateFrom("");
+                    setTempDateTo("");
+                    setTempLaveur("");
+                    setTempTypeVehicule("");
+                  }}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Effacer les champs
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFilterModalOpen(false)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="button"
+                  onClick={applyFilters}
+                  className="rounded-lg bg-[#14233B] px-4 py-2 text-sm font-bold text-white hover:bg-[#203754]"
+                >
+                  Appliquer
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+
       {/* MODAL : CONFIRMATION DE SUPPRESSION */}
       {deleteModalOpen && operationToDelete && (
         <div

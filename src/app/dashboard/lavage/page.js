@@ -135,39 +135,76 @@ export default function LavageDashboardPage() {
   const [donnees, setDonnees] = useState(null);
   const [erreur, setErreur] = useState("");
   const [chargement, setChargement] = useState(true);
-  const [modalNouvelleOperation, setModalNouvelleOperation] =
-    useState(false);
+  const [modalNouvelleOperation, setModalNouvelleOperation] = useState(false);
   const [menuRapideOuvert, setMenuRapideOuvert] = useState(false);
 
-  const chargerDashboard = useCallback(async ({ silencieux = false } = {}) => {
-    if (!silencieux) setChargement(true);
-    setErreur("");
+  function aujourdHuiAbidjan(date = new Date()) {
+    return new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Africa/Abidjan",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  }
+    
+  const [filtreOuvert, setFiltreOuvert] = useState(false);
 
-    try {
-      const response = await fetch("/api/lavage/dashboard", {
-        cache: "no-store",
-      });
+  const [dateDebut, setDateDebut] = useState();
+  const [dateFin, setDateFin] = useState();
 
-      if (response.status === 401) {
-        window.location.replace("/login");
-        return;
-      }
+  const [dateDebutTemp, setDateDebutTemp] = useState();
+  const [dateFinTemp, setDateFinTemp] = useState();
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          result.error || "Impossible de charger le dashboard."
-        );
-      }
-
-      setDonnees(result);
-    } catch (error) {
-      setErreur(error.message || "Une erreur est survenue.");
-    } finally {
-      setChargement(false);
-    }
+  useEffect(() => {
+    const today = aujourdHuiAbidjan();
+    setDateDebut(today);
+    setDateFin(today);
+    setDateDebutTemp(today);
+    setDateFinTemp(today);
   }, []);
+
+  const chargerDashboard = useCallback(
+    async ({
+      silencieux = false,
+      debut = dateDebut,
+      fin = dateFin,
+    } = {}) => {
+      if (!silencieux) setChargement(true);
+      setErreur("");
+
+      try {
+        const params = new URLSearchParams({
+          date_debut: debut,
+          date_fin: fin,
+        });
+
+        const response = await fetch(
+          `/api/lavage/dashboard?${params.toString()}`,
+          { cache: "no-store" }
+        );
+
+        if (response.status === 401) {
+          window.location.replace("/login");
+          return;
+        }
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            result.error || "Impossible de charger le dashboard."
+          );
+        }
+
+        setDonnees(result);
+      } catch (error) {
+        setErreur(error.message || "Une erreur est survenue.");
+      } finally {
+        setChargement(false);
+      }
+    },
+    [dateDebut, dateFin]
+  );
 
   useEffect(() => {
     chargerDashboard();
@@ -282,7 +319,7 @@ export default function LavageDashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center md:justify-end">
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
             <button
               type="button"
               onClick={() => setModalNouvelleOperation(true)}
@@ -314,6 +351,20 @@ export default function LavageDashboardPage() {
               >
                 {menuRapideOuvert ? <X size={17} /> : <Menu size={17} />}
                 Rubriques
+              </button>
+            </div>
+            <div className="flex justify-start sm:col-span-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDateDebutTemp(dateDebut);
+                  setDateFinTemp(dateFin);
+                  setFiltreOuvert(true);
+                }}
+                className="inline-flex min-h-9 w-fit items-center gap-2 rounded-lg border border-white/20 bg-white/[0.06] px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10"
+              >
+                <CalendarDays size={15} />
+                Filtrer par période
               </button>
             </div>
           </div>
@@ -361,8 +412,18 @@ export default function LavageDashboardPage() {
       {/* Indicateurs du jour */}
       <section>
         <SectionTitre
-          titre="Activité du jour"
-          description="Les chiffres clés de votre station."
+          titre={
+            dateDebut === dateFin
+              ? dateDebut === aujourdHuiAbidjan()
+                ? "Activité du jour"
+                : `Activité du ${new Date(`${dateDebut}T12:00:00`).toLocaleDateString("fr-FR")}`
+              : "Activité sur la période"
+          }
+          description={
+            dateDebut === dateFin
+              ? "Les chiffres clés de votre station."
+              : `Du ${new Date(`${dateDebut}T12:00:00`).toLocaleDateString("fr-FR")} au ${new Date(`${dateFin}T12:00:00`).toLocaleDateString("fr-FR")}.`
+          }
         />
 
         <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
@@ -690,6 +751,120 @@ export default function LavageDashboardPage() {
         Les recettes affichées ne remplacent pas le contrôle de caisse et
         le rapprochement des paiements.
       </p>
+
+      {filtreOuvert && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-[2px]"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setFiltreOuvert(false);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titre-filtre-periode"
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-5"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="mb-2 inline-flex rounded-lg bg-[#14233B]/5 p-2 text-[#14233B]">
+                  <CalendarDays size={18} />
+                </div>
+
+                <h2
+                  id="titre-filtre-periode"
+                  className="text-base font-bold text-[#14233B]"
+                >
+                  Filtrer par période
+                </h2>
+
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Choisis les dates à prendre en compte.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setFiltreOuvert(false)}
+                aria-label="Fermer"
+                className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block min-w-0">
+                <span className="mb-1.5 block text-xs font-semibold text-slate-700">
+                  Du
+                </span>
+                <input
+                  type="date"
+                  value={dateDebutTemp}
+                  max={aujourdHuiAbidjan()}
+                  onChange={(event) => setDateDebutTemp(event.target.value)}
+                  className="block h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800 outline-none transition focus:border-[#14233B] focus:ring-2 focus:ring-[#14233B]/10"
+                />
+              </label>
+
+              <label className="block min-w-0">
+                <span className="mb-1.5 block text-xs font-semibold text-slate-700">
+                  Au
+                </span>
+                <input
+                  type="date"
+                  value={dateFinTemp}
+                  min={dateDebutTemp || undefined}
+                  max={aujourdHuiAbidjan()}
+                  onChange={(event) => setDateFinTemp(event.target.value)}
+                  className="block h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800 outline-none transition focus:border-[#14233B] focus:ring-2 focus:ring-[#14233B]/10"
+                />
+              </label>
+            </div>
+
+            {dateDebutTemp && dateFinTemp && dateDebutTemp > dateFinTemp && (
+              <p className="mt-2 text-xs text-red-600">
+                La date de début doit précéder la date de fin.
+              </p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={() => setFiltreOuvert(false)}
+                className="min-h-9 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  !dateDebutTemp ||
+                  !dateFinTemp ||
+                  dateDebutTemp > dateFinTemp ||
+                  dateFinTemp > aujourdHuiAbidjan()
+                }
+                onClick={() => {
+                  setDateDebut(dateDebutTemp);
+                  setDateFin(dateFinTemp);
+                  setFiltreOuvert(false);
+
+                  chargerDashboard({
+                    debut: dateDebutTemp,
+                    fin: dateFinTemp,
+                  });
+                }}
+                className="min-h-9 rounded-lg bg-[#14233B] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#20385B] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Appliquer
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* Nouvelle opération */}
       <NouvelleOperationModal

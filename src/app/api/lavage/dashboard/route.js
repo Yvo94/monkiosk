@@ -1,6 +1,4 @@
 
-// src/app/api/lavage/dashboard/route.js
-
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
@@ -13,14 +11,36 @@ function dateAbidjan(date = new Date()) {
     day: "2-digit",
   }).formatToParts(date);
 
-  const get = (type) =>
-    parts.find((part) => part.type === type)?.value;
+  const get = (type) => parts.find((part) => part.type === type)?.value;
 
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 function debutJour(date) {
   return `${date}T00:00:00.000Z`;
+}
+
+function lendemain(date) {
+  const valeur = new Date(`${date}T12:00:00.000Z`);
+  valeur.setUTCDate(valeur.getUTCDate() + 1);
+  return valeur.toISOString().slice(0, 10);
+}
+
+function decalageJour(date, nombre) {
+  const valeur = new Date(`${date}T12:00:00.000Z`);
+  valeur.setUTCDate(valeur.getUTCDate() + nombre);
+  return valeur.toISOString().slice(0, 10);
+}
+
+function dateValide(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return false;
+
+  const valeur = new Date(`${date}T12:00:00.000Z`);
+
+  return (
+    !Number.isNaN(valeur.getTime()) &&
+    valeur.toISOString().slice(0, 10) === date
+  );
 }
 
 function montant(value) {
@@ -43,62 +63,37 @@ function reponseErreur(message, status, details = undefined) {
 }
 
 export async function GET(request) {
-  console.log("[LAVAGE] 1. Route appelée :", request.url);
-
   try {
-    // -------------------------------------------------------
-    // 1. Vérifier la configuration Supabase
-    // -------------------------------------------------------
-
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-
     const supabaseKey =
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      console.error("[LAVAGE] Configuration Supabase manquante :", {
-        urlPresente: Boolean(supabaseUrl),
-        clePresente: Boolean(supabaseKey),
-      });
-
       return reponseErreur(
         "Configuration Supabase serveur incomplète.",
         500
       );
     }
 
-    // -------------------------------------------------------
-    // 2. Créer le client associé à la session utilisateur
-    // -------------------------------------------------------
-
     const cookieStore = await cookies();
 
-    const supabase = createServerClient(
-      supabaseUrl,
-      supabaseKey,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) => {
-                cookieStore.set(name, value, options);
-              });
-            } catch {
-              // Les cookies peuvent être en lecture seule.
-            }
-          },
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
         },
-      }
-    );
-
-    // -------------------------------------------------------
-    // 3. Vérifier l'identité de l'utilisateur
-    // -------------------------------------------------------
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
+          } catch {
+            // Les cookies peuvent être en lecture seule.
+          }
+        },
+      },
+    });
 
     const {
       data: { user },
@@ -106,24 +101,39 @@ export async function GET(request) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      console.warn("[LAVAGE] Session invalide :", {
-        erreur: authError?.message ?? null,
-      });
-
       return reponseErreur("Session expirée.", 401);
     }
 
-    console.log("[LAVAGE] Utilisateur connecté :", {
-      id: user.id,
-      email: user.email ?? null,
-    });
-
-    // -------------------------------------------------------
-    // 4. Identifier la station autorisée
-    // -------------------------------------------------------
-
     const { searchParams } = new URL(request.url);
     const stationId = searchParams.get("lavage_id");
+
+    const today = dateAbidjan();
+
+    // Sans paramètres : statistiques du jour.
+    const dateDebut = searchParams.get("date_debut") || today;
+    const dateFin = searchParams.get("date_fin") || today;
+
+    if (!dateValide(dateDebut) || !dateValide(dateFin)) {
+      return reponseErreur("Les dates sélectionnées sont invalides.", 400);
+    }
+
+    if (dateDebut > dateFin) {
+      return reponseErreur(
+        "La date de début doit être antérieure ou égale à la date de fin.",
+        400
+      );
+    }
+
+    if (dateFin > today) {
+      return reponseErreur(
+        "La date de fin ne peut pas être dans le futur.",
+        400
+      );
+    }
+
+    // La borne de fin est exclusive pour inclure toute la journée choisie.
+    const borneDebut = debutJour(dateDebut);
+    const borneFin = debutJour(lendemain(dateFin));
 
     let stationQuery = supabase
       .from("lavages")
@@ -135,42 +145,13 @@ export async function GET(request) {
       stationQuery = stationQuery.eq("id", stationId);
     }
 
-    const {
-      data: stations,
-      error: stationError,
-    } = await stationQuery;
-
-    /*console.log("[LAVAGE] Diagnostic station :", {
-      utilisateurId: user.id,
-      stationDemandee: stationId,
-      nombreStations: stations?.length ?? 0,
-      stations: (stations || []).map((station) => ({
-        id: station.id,
-        nom: station.nom,
-      })),
-      erreur: stationError
-        ? {
-            message: stationError.message,
-            code: stationError.code,
-            details: stationError.details,
-            hint: stationError.hint,
-          }
-        : null,
-    });*/
+    const { data: stations, error: stationError } = await stationQuery;
 
     if (stationError) {
-      console.error(
-        "[LAVAGE] Erreur de recherche de station :",
-        stationError
-      );
-
+      console.error("[LAVAGE] Erreur de recherche de station :", stationError);
       return reponseErreur(
         "Impossible de vérifier l'accès à la station.",
-        500,
-        {
-          code: stationError.code,
-          message: stationError.message,
-        }
+        500
       );
     }
 
@@ -179,16 +160,10 @@ export async function GET(request) {
         stationId
           ? "Station introuvable ou accès non autorisé."
           : "Aucune station de lavage active trouvée.",
-        403,
-        {
-          utilisateurId: user.id,
-          stationDemandee: stationId,
-          nombreStations: 0,
-        }
+        403
       );
     }
 
-    // Plusieurs stations : demander à l'interface d'en sélectionner une.
     if (!stationId && stations.length > 1) {
       return NextResponse.json(
         {
@@ -208,35 +183,19 @@ export async function GET(request) {
     const station = stations[0];
     const devise = station.devise || "FCFA";
 
-    // -------------------------------------------------------
-    // 5. Calculer les périodes en heure d'Abidjan
-    // -------------------------------------------------------
-
-    const today = dateAbidjan();
-
-    const tomorrowDate = new Date(`${today}T12:00:00.000Z`);
-    tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
-    const tomorrow = dateAbidjan(tomorrowDate);
-
-    const startDate = new Date(`${today}T12:00:00.000Z`);
-    startDate.setUTCDate(startDate.getUTCDate() - 6);
-    const sevenDaysAgo = dateAbidjan(startDate);
-
-    // -------------------------------------------------------
-    // 6. Charger les données du dashboard
-    // -------------------------------------------------------
+    // Graphique : les 7 jours se terminant à la date de fin sélectionnée.
+    const debutEvolution = decalageJour(dateFin, -6);
 
     const [
-      servicesTodayResult,
-      servicesSevenDaysResult,
-      paymentsTodayResult,
+      servicesPeriodeResult,
+      servicesEvolutionResult,
+      encaissementsPeriodeResult,
       recentServicesResult,
       caisseResult,
       prestationsResult,
       laveursResult,
-      depensesTodayResult,
+      depensesPeriodeResult,
     ] = await Promise.all([
-      // Prestations terminées aujourd'hui
       supabase
         .from("lavage_services")
         .select(`
@@ -253,28 +212,25 @@ export async function GET(request) {
         `)
         .eq("lavage_id", station.id)
         .eq("statut", "termine")
-        .gte("date_service", debutJour(today))
-        .lt("date_service", debutJour(tomorrow)),
+        .gte("date_service", borneDebut)
+        .lt("date_service", borneFin),
 
-      // Chiffre d'affaires sur sept jours
       supabase
         .from("lavage_services")
         .select("id, montant_total, date_service")
         .eq("lavage_id", station.id)
         .eq("statut", "termine")
-        .gte("date_service", debutJour(sevenDaysAgo))
-        .lt("date_service", debutJour(tomorrow))
+        .gte("date_service", debutJour(debutEvolution))
+        .lt("date_service", debutJour(lendemain(dateFin)))
         .order("date_service", { ascending: true }),
 
-      // Encaissements du jour
       supabase
         .from("lavage_encaissements")
         .select("id, montant, date_encaissement")
         .eq("lavage_id", station.id)
-        .gte("date_encaissement", debutJour(today))
-        .lt("date_encaissement", debutJour(tomorrow)),
+        .gte("date_encaissement", borneDebut)
+        .lt("date_encaissement", borneFin),
 
-      // Cinq dernières prestations
       supabase
         .from("lavage_services")
         .select(`
@@ -294,31 +250,30 @@ export async function GET(request) {
           )
         `)
         .eq("lavage_id", station.id)
+        .gte("date_service", borneDebut)
+        .lt("date_service", borneFin)
         .order("date_service", { ascending: false })
         .limit(5),
 
-      // Caisses actives
+      // Les soldes des caisses sont des soldes actuels.
       supabase
         .from("lavage_caisses")
         .select("id, nom, code, solde_actuel")
         .eq("lavage_id", station.id)
         .eq("actif", true),
 
-      // Nombre de prestations configurées
       supabase
         .from("lavage_prestations")
         .select("id", { count: "exact", head: true })
         .eq("lavage_id", station.id)
         .eq("actif", true),
 
-      // Nombre de laveurs actifs
       supabase
         .from("lavage_laveurs")
         .select("id", { count: "exact", head: true })
         .eq("lavage_id", station.id)
         .eq("actif", true),
 
-            // Dépenses de la journée
       supabase
         .from("lavage_depenses")
         .select(`
@@ -332,39 +287,33 @@ export async function GET(request) {
           notes
         `)
         .eq("lavage_id", station.id)
-        .gte("date_depense", debutJour(today))
-        .lt("date_depense", debutJour(tomorrow))
+        .gte("date_depense", borneDebut)
+        .lt("date_depense", borneFin)
         .order("date_depense", { ascending: false }),
     ]);
 
-    // -------------------------------------------------------
-    // 7. Vérifier toutes les requêtes
-    // -------------------------------------------------------
-
-    const results = [
-      ["prestations du jour", servicesTodayResult],
-      ["prestations des sept jours", servicesSevenDaysResult],
-      ["encaissements du jour", paymentsTodayResult],
+    const resultats = [
+      ["prestations de la période", servicesPeriodeResult],
+      ["évolution du chiffre d'affaires", servicesEvolutionResult],
+      ["encaissements de la période", encaissementsPeriodeResult],
       ["dernières prestations", recentServicesResult],
       ["caisses", caisseResult],
       ["catalogue des prestations", prestationsResult],
       ["laveurs", laveursResult],
-      ["dépenses du jour", depensesTodayResult],
+      ["dépenses de la période", depensesPeriodeResult],
     ];
 
-    const failedResult = results.find(
-      ([, result]) => result.error
-    );
+    const echec = resultats.find(([, resultat]) => resultat.error);
 
-    if (failedResult) {
-      const [nomRequete, result] = failedResult;
+    if (echec) {
+      const [nomRequete, resultat] = echec;
 
       console.error("[LAVAGE] Erreur de requête :", {
         requete: nomRequete,
-        message: result.error.message,
-        code: result.error.code,
-        details: result.error.details,
-        hint: result.error.hint,
+        message: resultat.error.message,
+        code: resultat.error.code,
+        details: resultat.error.details,
+        hint: resultat.error.hint,
       });
 
       return reponseErreur(
@@ -372,19 +321,19 @@ export async function GET(request) {
         500,
         {
           requete: nomRequete,
-          code: result.error.code,
-          message: result.error.message,
+          code: resultat.error.code,
+          message: resultat.error.message,
         }
       );
     }
 
-    const servicesToday = servicesTodayResult.data || [];
-    const servicesSevenDays = servicesSevenDaysResult.data || [];
-    const paymentsToday = paymentsTodayResult.data || [];
+    const services = servicesPeriodeResult.data || [];
+    const encaissementsListe = encaissementsPeriodeResult.data || [];
     const caisses = caisseResult.data || [];
-    const depensesToday = depensesTodayResult.data || [];
+    const depenses = depensesPeriodeResult.data || [];
+    const servicesEvolution = servicesEvolutionResult.data || [];
 
-    const depensesPayees = depensesToday.filter(
+    const depensesPayees = depenses.filter(
       (depense) => depense.statut === "payee"
     );
 
@@ -393,60 +342,47 @@ export async function GET(request) {
       0
     );
 
-    
-
-    // -------------------------------------------------------
-    // 8. Calculer les statistiques journalières
-    // -------------------------------------------------------
-
-    const chiffreAffaires = servicesToday.reduce(
-      (sum, service) =>
-        sum + montant(service.montant_total),
-      0
-    );
-    
-    const encaissements = paymentsToday.reduce(
-      (sum, payment) =>
-        sum + montant(payment.montant),
+    const chiffreAffaires = services.reduce(
+      (total, service) => total + montant(service.montant_total),
       0
     );
 
-    const commissionsTotales = servicesToday.reduce(
-      (sum, service) =>
-        sum + montant(service.commission_laveur),
+    const encaissements = encaissementsListe.reduce(
+      (total, paiement) => total + montant(paiement.montant),
       0
     );
 
-    const commissionsPayees = servicesToday.reduce(
-      (sum, service) =>
-        sum +
+    const commissionsTotales = services.reduce(
+      (total, service) => total + montant(service.commission_laveur),
+      0
+    );
+
+    const commissionsPayees = services.reduce(
+      (total, service) =>
+        total +
         (estPayee(service.commission_statut)
           ? montant(service.commission_laveur)
           : 0),
       0
     );
 
-    const commissionsAPayer = servicesToday.reduce(
-      (sum, service) =>
-        sum +
+    const commissionsAPayer = services.reduce(
+      (total, service) =>
+        total +
         (!estPayee(service.commission_statut)
           ? montant(service.commission_laveur)
           : 0),
       0
     );
 
-    // Solde cumulé de toutes les caisses actives
     const soldeCaisses = caisses.reduce(
-      (sum, caisse) =>
-        sum + montant(caisse.solde_actuel),
+      (total, caisse) => total + montant(caisse.solde_actuel),
       0
     );
 
-    // Solde de la caisse principale
     const caissePrincipale = caisses.find(
       (caisse) =>
-        String(caisse.code || "").trim().toUpperCase() ===
-        "PRINCIPALE"
+        String(caisse.code || "").trim().toUpperCase() === "PRINCIPALE"
     );
 
     const soldeCaissePrincipale = montant(
@@ -459,18 +395,12 @@ export async function GET(request) {
     const beneficeNet =
       resultatApresCommissions - totalDepensesPayees;
 
-    // -------------------------------------------------------
-    // 9. Regrouper les commissions par laveur
-    // -------------------------------------------------------
-
     const commissionsParLaveur = new Map();
 
-    for (const service of servicesToday) {
+    for (const service of services) {
       const laveurId = service.laveur_id || "sans-laveur";
-
       const nom =
-        service.lavage_laveurs?.nom ||
-        "Laveur non renseigné";
+        service.lavage_laveurs?.nom || "Laveur non renseigné";
 
       if (!commissionsParLaveur.has(laveurId)) {
         commissionsParLaveur.set(laveurId, {
@@ -496,40 +426,21 @@ export async function GET(request) {
       }
     }
 
-    // -------------------------------------------------------
-    // 10. Construire l'évolution du chiffre d'affaires
-    // -------------------------------------------------------
+    const evolution = Array.from({ length: 7 }, (_, index) => {
+      const date = decalageJour(debutEvolution, index);
 
-    const evolution = Array.from(
-      { length: 7 },
-      (_, index) => {
-        const date = new Date(`${today}T12:00:00.000Z`);
+      const total = servicesEvolution
+        .filter(
+          (service) =>
+            dateAbidjan(new Date(service.date_service)) === date
+        )
+        .reduce(
+          (somme, service) => somme + montant(service.montant_total),
+          0
+        );
 
-        date.setUTCDate(date.getUTCDate() - (6 - index));
-
-        const key = dateAbidjan(date);
-
-        const total = servicesSevenDays
-          .filter(
-            (service) =>
-              dateAbidjan(new Date(service.date_service)) === key
-          )
-          .reduce(
-            (sum, service) =>
-              sum + montant(service.montant_total),
-            0
-          );
-
-        return {
-          date: key,
-          montant: total,
-        };
-      }
-    );
-
-    // -------------------------------------------------------
-    // 11. Retourner les données au dashboard
-    // -------------------------------------------------------
+      return { date, montant: total };
+    });
 
     return NextResponse.json({
       station: {
@@ -543,47 +454,35 @@ export async function GET(request) {
       statistiques: {
         chiffreAffaires,
         encaissements,
-
-        prestationsTerminees: servicesToday.length,
+        prestationsTerminees: services.length,
 
         panierMoyen:
-          servicesToday.length > 0
-            ? chiffreAffaires / servicesToday.length
-            : 0,
+          services.length > 0 ? chiffreAffaires / services.length : 0,
 
         commissionsTotales,
         commissionsPayees,
         commissionsAPayer,
-
         resultatApresCommissions,
-
         totalDepensesPayees,
-
-        nombreDepenses: depensesToday.length,
-
+        nombreDepenses: depenses.length,
         beneficeNet,
 
         soldeCaisses,
         soldeCaissePrincipale,
         caissesActives: caisses.length,
+        prestationsConfigurees: prestationsResult.count || 0,
+        laveursActifs: laveursResult.count || 0,
+      },
 
-        prestationsConfigurees:
-          prestationsResult.count || 0,
-
-        laveursActifs:
-          laveursResult.count || 0,
-        },
-      commissionsParLaveur:
-        Array.from(commissionsParLaveur.values()),
-
+      commissionsParLaveur: Array.from(commissionsParLaveur.values()),
       evolution,
-
-      derniersServices:
-        recentServicesResult.data || [],
-        
-      depensesDuJour: depensesToday,
-
+      derniersServices: recentServicesResult.data || [],
+      depensesDuJour: depenses,
       dateStatistiques: today,
+      periode: {
+        dateDebut,
+        dateFin,
+      },
     });
   } catch (error) {
     console.error("[LAVAGE] Erreur inattendue du dashboard :", {
