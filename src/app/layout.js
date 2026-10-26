@@ -14,6 +14,14 @@ export const metadata = {
 
   applicationName: "MAAX Business",
 
+  manifest: "/manifest.webmanifest",
+
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "MAAX Business",
+  },
+
   keywords: [
     "MAAX Business",
     "logiciel de gestion",
@@ -51,6 +59,13 @@ export const metadata = {
       "La plateforme de gestion des ventes, stocks et opérations de votre entreprise.",
     images: ["/og-maax-business.jpg"],
   },
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#14233B",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }) {
