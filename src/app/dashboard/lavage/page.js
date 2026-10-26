@@ -146,6 +146,8 @@ export default function LavageDashboardPage() {
       day: "2-digit",
     }).format(date);
   }
+
+  
     
   const [filtreOuvert, setFiltreOuvert] = useState(false);
 
@@ -156,12 +158,20 @@ export default function LavageDashboardPage() {
   const [dateFinTemp, setDateFinTemp] = useState();
 
   useEffect(() => {
-    const today = aujourdHuiAbidjan();
-    setDateDebut(today);
-    setDateFin(today);
-    setDateDebutTemp(today);
-    setDateFinTemp(today);
+    const date = new Intl.DateTimeFormat("fr-CA", {
+      timeZone: "Africa/Abidjan",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    //setToday(date);
+    setDateDebut(date);
+    setDateFin(date);
+    setDateDebutTemp(date);
+    setDateFinTemp(date);
   }, []);
+
 
   const chargerDashboard = useCallback(
     async ({
@@ -171,6 +181,30 @@ export default function LavageDashboardPage() {
     } = {}) => {
       if (!silencieux) setChargement(true);
       setErreur("");
+      
+
+      if (!debut || !fin) {
+        console.warn("[Dashboard Lavage] Chargement ignoré : dates non initialisées.");
+        return;
+      }
+
+      const formatDateValide = /^\d{4}-\d{2}-\d{2}$/;
+
+      if (!formatDateValide.test(debut) || !formatDateValide.test(fin)) {
+        console.error("[Dashboard Lavage] Format de date invalide :", {
+          debut,
+          fin,
+        });
+        setErreur("Les dates sélectionnées sont invalides.");
+        setChargement(false);
+        return;
+      }
+
+      if (debut > fin) {
+        setErreur("La date de début doit être antérieure ou égale à la date de fin.");
+        setChargement(false);
+        return;
+      }
 
       try {
         const params = new URLSearchParams({
@@ -198,6 +232,7 @@ export default function LavageDashboardPage() {
 
         setDonnees(result);
       } catch (error) {
+        console.error("[Dashboard Lavage] Erreur de chargement :", error);
         setErreur(error.message || "Une erreur est survenue.");
       } finally {
         setChargement(false);
@@ -207,8 +242,13 @@ export default function LavageDashboardPage() {
   );
 
   useEffect(() => {
-    chargerDashboard();
-  }, [chargerDashboard]);
+    if (!dateDebut || !dateFin) return;
+
+    chargerDashboard({
+      debut: dateDebut,
+      fin: dateFin,
+    });
+  }, [dateDebut, dateFin, chargerDashboard]);
 
   if (chargement && !donnees) {
     return (
