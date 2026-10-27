@@ -66,13 +66,55 @@ async function getOwnedStations(supabase, userId) {
 async function fetchRows(query, label) {
   const { data, error } = await query;
 
+  
   if (error) {
-    console.error(`[Lavage services] ${label}`, error);
-    throw new Error(`${label} : ${error.message}`);
+    console.error(`[Lavage services] ${label}`, {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+
+    throw new Error(
+      `${label} : ${error.message}` +
+      (error.code ? ` (code ${error.code})` : "")
+    );
   }
 
   return data || [];
 }
+
+
+async function fetchRowsInBatches(
+  supabase,
+  table,
+  columns,
+  stationId,
+  foreignKey,
+  ids,
+  label
+) {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  const rows = [];
+
+  for (let i = 0; i < uniqueIds.length; i += 100) {
+    const batchIds = uniqueIds.slice(i, i + 100);
+
+    const batch = await fetchRows(
+      supabase
+        .from(table)
+        .select(columns)
+        .eq("lavage_id", stationId)
+        .in(foreignKey, batchIds),
+      label
+    );
+
+    rows.push(...batch);
+  }
+
+  return rows;
+}
+
 
 async function getOperations(supabase, lavageId) {
   const services = await fetchRows(
@@ -135,7 +177,7 @@ async function getOperations(supabase, lavageId) {
               "id, immatriculation, marque, modele, couleur, type_vehicule_id"
             )
             .eq("lavage_id", lavageId)
-            .in("id", vehiculeIds),
+            .limit(100),
           "Impossible de charger les véhicules"
         )
       : [],
@@ -169,17 +211,22 @@ async function getOperations(supabase, lavageId) {
           "Impossible de charger les prestations"
         )
       : [],
+    
     serviceIds.length
-      ? fetchRows(
-          supabase
-            .from("lavage_encaissements")
-            .select(
-              "id, service_id, montant, mode_paiement, reference_paiement, date_encaissement"
-            )
-            .eq("lavage_id", lavageId)
-            .in("service_id", serviceIds)
-            .order("date_encaissement", { ascending: false }),
+      ? fetchRowsInBatches(
+          supabase,
+          "lavage_encaissements",
+          "id, service_id, montant, mode_paiement, reference_paiement, date_encaissement",
+          lavageId,
+          "service_id",
+          serviceIds,
           "Impossible de charger les encaissements"
+        ).then((rows) =>
+          rows.sort(
+            (a, b) =>
+              new Date(b.date_encaissement).getTime() -
+              new Date(a.date_encaissement).getTime()
+          )
         )
       : [],
   ]);
