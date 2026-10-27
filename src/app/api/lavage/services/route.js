@@ -170,14 +170,13 @@ async function getOperations(supabase, lavageId) {
     encaissements,
   ] = await Promise.all([
     vehiculeIds.length
-      ? fetchRows(
-          supabase
-            .from("lavage_vehicules")
-            .select(
-              "id, immatriculation, marque, modele, couleur, type_vehicule_id"
-            )
-            .eq("lavage_id", lavageId)
-            .limit(100),
+      ? fetchRowsInBatches(
+          supabase,
+          "lavage_vehicules",
+          "id, immatriculation, marque, modele, couleur, type_vehicule_id",
+          lavageId,
+          "id",
+          vehiculeIds,
           "Impossible de charger les véhicules"
         )
       : [],

@@ -1067,32 +1067,23 @@ export default function ServicesPage() {
         return false;
       }
 
+      
       // Filtre par type de véhicule
       if (filterTypeVehicule) {
-        const operationTypeId =
-          op.type_vehicule_id ||
-          op.vehicule?.type_vehicule_id ||
-          op.vehicule?.type_id ||
-          "";
-
         const selectedType = types.find(
-          (type) => type.id === filterTypeVehicule
+          (type) =>
+            String(type.id).trim().toLowerCase() ===
+            String(filterTypeVehicule).trim().toLowerCase()
         );
 
-        const operationTypeName =
-          op.type_vehicule?.nom ||
-          op.vehicule?.type_vehicule?.nom ||
-          op.vehicule?.type_vehicule_nom ||
+        const operationTypeId =
+          op.vehicule?.type_vehicule_id ??
+          op.type_vehicule_id ??
           "";
 
         const matchesType =
-          String(operationTypeId) === filterTypeVehicule ||
-          (
-            selectedType &&
-            operationTypeName &&
-            operationTypeName.toLocaleLowerCase("fr") ===
-              selectedType.nom.toLocaleLowerCase("fr")
-          );
+          String(operationTypeId).trim().toLowerCase() ===
+          String(filterTypeVehicule).trim().toLowerCase();
 
         if (!matchesType) return false;
       }
