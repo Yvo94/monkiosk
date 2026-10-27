@@ -42,50 +42,87 @@ function moyenne(valeurs) {
   );
 }
 
+
+function mediane(valeurs) {
+  if (!valeurs.length) return 0;
+
+  const triees = [...valeurs].sort((a, b) => a - b);
+  const milieu = Math.floor(triees.length / 2);
+
+  return triees.length % 2 === 0
+    ? (triees[milieu - 1] + triees[milieu]) / 2
+    : triees[milieu];
+}
+
+function moyennePonderee(valeurs) {
+  if (!valeurs.length) return 0;
+
+  // Les observations les plus récentes ont plus de poids.
+  let totalPondere = 0;
+  let totalPoids = 0;
+
+  valeurs.forEach((valeur, index) => {
+    const poids = index + 1;
+    totalPondere += valeur * poids;
+    totalPoids += poids;
+  });
+
+  return totalPoids ? totalPondere / totalPoids : 0;
+}
+
+
 function arrondir(valeur) {
   return Math.round(valeur);
 }
 
+
 function calculerPrevisions(historique, aujourdHui) {
   const dates = Object.keys(historique).sort();
-  const valeurs = dates.map((date) => historique[date]);
+  const valeurs = dates.map((date) =>
+    Math.max(0, Number(historique[date]) || 0)
+  );
 
-  const joursActifs = valeurs.filter((montant) => montant > 0).length;
+  const joursActifs = valeurs.filter(
+    (montant) => montant > 0
+  ).length;
+
   const nombreJours = valeurs.length;
 
+  // Tendance sur 28 jours complets comparés aux 28 jours précédents.
+  const derniers28 = valeurs.slice(-28);
+  const precedents28 = valeurs.slice(-56, -28);
 
-  // Les sept derniers jours historiques complets.
-  const derniers7 = valeurs.slice(-7);
-  const precedents7 = valeurs.slice(-14, -7);
+  const moyenneRecente = moyenne(derniers28);
+  const moyennePrecedente = moyenne(precedents28);
 
-  const moyenneRecente = moyenne(derniers7);
-  const moyennePrecedente = moyenne(precedents7);
+  const joursActifsRecents = derniers28.filter(
+    (montant) => montant > 0
+  ).length;
 
-  // Par défaut, aucune tendance n'est appliquée.
+  const joursActifsPrecedents = precedents28.filter(
+    (montant) => montant > 0
+  ).length;
+
   let facteurTendance = 1;
 
-  // On n'applique la tendance que si les 14 jours
-  // précédents sont disponibles et suffisamment renseignés.
-  const historiqueSuffisant =
-    derniers7.length === 7 &&
-    precedents7.length === 7 &&
-    derniers7.filter((montant) => montant > 0).length >= 4 &&
-    precedents7.filter((montant) => montant > 0).length >= 4;
+  const tendanceFiable =
+    derniers28.length === 28 &&
+    precedents28.length === 28 &&
+    joursActifsRecents >= 8 &&
+    joursActifsPrecedents >= 8 &&
+    moyennePrecedente > 0;
 
-  if (historiqueSuffisant && moyennePrecedente > 0) {
-    facteurTendance = moyenneRecente / moyennePrecedente;
+  if (tendanceFiable) {
+    const ratio = moyenneRecente / moyennePrecedente;
 
-    // Limiter les variations à +/- 25 %.
     facteurTendance = Math.max(
-      0.75,
-      Math.min(1.25, facteurTendance)
+      0.85,
+      Math.min(1.15, ratio)
     );
   }
 
-
   const previsions = [];
 
-  // Les prévisions commencent demain et couvrent sept jours complets.
   for (let i = 1; i <= JOURS_PREVISION; i++) {
     const date = ajouterJours(aujourdHui, i);
 
@@ -93,6 +130,7 @@ function calculerPrevisions(historique, aujourdHui) {
       `${date}T12:00:00.000Z`
     ).getUTCDay();
 
+    // Les dernières occurrences du même jour de semaine.
     const valeursMemeJour = dates
       .filter((dateHistorique) => {
         const jourHistorique = new Date(
@@ -101,36 +139,51 @@ function calculerPrevisions(historique, aujourdHui) {
 
         return jourHistorique === jourSemaine;
       })
-      .slice(-8)
-      .map((dateHistorique) => historique[dateHistorique]);
+      .slice(-12)
+      .map((dateHistorique) =>
+        Math.max(
+          0,
+          Number(historique[dateHistorique]) || 0
+        )
+      );
 
-    const moyenneJourSemaine = moyenne(valeursMemeJour);
+    const moyennePondereeJour =
+      moyennePonderee(valeursMemeJour);
 
-    let montantPrevu;
+    const medianeJour = mediane(valeursMemeJour);
 
-    if (valeursMemeJour.length > 0) {
-      // Le jour de la semaine pèse 70 %.
-      // La moyenne récente pèse 30 %.
-      montantPrevu =
-        (
-          moyenneJourSemaine * 0.7 +
-          moyenneRecente * 0.3
-        ) * facteurTendance;
+    let basePrevision;
+
+    if (valeursMemeJour.length >= 4) {
+      // La médiane limite l'effet des journées exceptionnelles.
+      // La moyenne pondérée prend davantage en compte la période récente.
+      basePrevision =
+        medianeJour * 0.4 +
+        moyennePondereeJour * 0.6;
+    } else if (valeursMemeJour.length > 0) {
+      basePrevision =
+        moyennePondereeJour;
     } else {
-      montantPrevu = moyenneRecente * facteurTendance;
+      basePrevision = moyenneRecente;
     }
 
-    montantPrevu = Math.max(0, arrondir(montantPrevu));
+    const montantPrevu = Math.max(
+      0,
+      arrondir(basePrevision * facteurTendance)
+    );
 
     previsions.push({
       date,
       jourSemaine,
       montantPrevu,
-      historiqueMemeJour: arrondir(moyenneJourSemaine),
+      historiqueMemeJour: arrondir(
+        moyenne(valeursMemeJour)
+      ),
     });
   }
 
-  // La fiabilité reste prudente tant que l'historique est limité.
+  // Indicateur provisoire basé sur la quantité de données.
+  // Il ne représente pas encore une précision mesurée par backtesting.
   let fiabilite = "faible";
 
   if (nombreJours >= 120 && joursActifs >= 45) {
@@ -150,10 +203,13 @@ function calculerPrevisions(historique, aujourdHui) {
     ),
     joursHistorique: nombreJours,
     joursAvecActivite: joursActifs,
-    facteurTendance: Number(facteurTendance.toFixed(2)),
+    facteurTendance: Number(
+      facteurTendance.toFixed(2)
+    ),
     fiabilite,
   };
 }
+
 
 export async function GET(request) {
   try {

@@ -507,18 +507,60 @@ export async function POST(request) {
       );
     }
 
-    const { data, error } = await supabase.rpc(
-      "lavage_enregistrer_prestation",
-      {
-        p_lavage_id: station.id,
-        p_payload: {
-          ...payload,
-          quantite_operations: Number(
-            payload.quantite_operations ?? 1
-          ),
+    
+    const idempotencyKey = payload?.idempotency_key;
+
+    if (
+      typeof idempotencyKey !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        idempotencyKey
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Clé de synchronisation invalide ou absente.",
         },
-      }
-    );
+        { status: 400 }
+      );
+    }
+
+
+      console.log("[DEBUG DATE LAVAGE]", {
+        date_service: payload.date_service,
+        date_recue: new Date().toISOString(),
+        heure_abidjan: new Intl.DateTimeFormat("fr-FR", {
+          timeZone: "Africa/Abidjan",
+          dateStyle: "short",
+          timeStyle: "medium",
+        }).format(new Date()),
+      });
+
+      console.log("[DEBUG DATE LAVAGE - RPC]", {
+        date_service: payload.date_service,
+        serveur_iso: new Date().toISOString(),
+        serveur_ms: Date.now(),
+      });
+
+      const dateDiagnostic = new Date();
+
+      console.log("[DIAGNOSTIC AVANT RPC]", {
+        date_service: payload.date_service,
+        heure_api_iso: dateDiagnostic.toISOString(),
+        heure_api_ms: dateDiagnostic.getTime(),
+      });
+      const { data, error } = await supabase.rpc(
+        "lavage_enregistrer_prestation",
+        {
+          p_lavage_id: station.id,
+          p_payload: {
+            ...payload,
+            idempotency_key: idempotencyKey,
+            quantite_operations: Number(payload.quantite_operations),
+          },
+        }
+      );
+
 
     if (error) {
       console.error("[RPC lavage_enregistrer_prestation]", {

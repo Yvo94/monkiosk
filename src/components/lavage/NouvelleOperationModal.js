@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ArrowRight,
   Banknote,
@@ -243,6 +243,10 @@ export default function NouvelleOperationModal({
   const [step, setStep] = useState(1);
   const [quantite, setQuantite] = useState(0);
 
+  // Une clé par lot : elle est réutilisée tant que le serveur
+  // n'a pas confirmé l'enregistrement.
+  const idempotencyKeyRef = useRef(null);
+
   const [stations, setStations] = useState([]);
   const [types, setTypes] = useState([]);
   const [prestations, setPrestations] = useState([]);
@@ -396,8 +400,7 @@ export default function NouvelleOperationModal({
       const nextCaisses = results[4].data || [];
 
       const caissePrincipale = nextCaisses.find(
-        (c) =>
-          String(c.code || "").trim().toUpperCase() === "PRINCIPALE"
+        (c) => String(c.code || "").trim().toUpperCase() === "PRINCIPALE"
       );
 
       setTypes(nextTypes);
@@ -424,10 +427,7 @@ export default function NouvelleOperationModal({
         )
           ? previous.laveur_id
           : "",
-        caisse_id:
-          caissePrincipale?.id ||
-          nextCaisses[0]?.id ||
-          "",
+        caisse_id: caissePrincipale?.id || nextCaisses[0]?.id || "",
       }));
     } catch (exception) {
       setError(exception.message || "Erreur lors du chargement.");
@@ -503,7 +503,7 @@ export default function NouvelleOperationModal({
       setStep(3);
     }
   }
-    
+
   function changeQuantity(value) {
     const parsed = Number(value);
 
@@ -515,10 +515,12 @@ export default function NouvelleOperationModal({
 
   async function submit(event) {
     event.preventDefault();
+
     // Ne jamais enregistrer depuis les étapes 1 et 2.
     if (step !== 3 || submitting) {
-        return;
+      return;
     }
+
     setError("");
 
     if (!station) {
@@ -554,9 +556,10 @@ export default function NouvelleOperationModal({
       setError("Sélectionne un mode de paiement valide.");
       return;
     }
+
     if (Number(quantite) === 0) {
-        setQuantite(1);;
-        return;
+      setQuantite(1);
+      return;
     }
 
     if (
@@ -567,11 +570,6 @@ export default function NouvelleOperationModal({
       setError("La quantité doit être comprise entre 1 et 50.");
       return;
     }
-
-    /*if (!form.immatriculation.trim() && !form.client_nom.trim()) {
-      setError("Renseigne l'immatriculation ou le nom du client.");
-      return;
-    }*/
 
     if (
       form.client_email.trim() &&
@@ -586,21 +584,34 @@ export default function NouvelleOperationModal({
     const dateAujourdhui = String(getTodayAbidjan() || "").slice(0, 10);
 
     if (!form.date_service) {
-        setError("Sélectionne la date de l'opération.");
-        setStep(1);
-        return;
+      setError("Sélectionne la date de l'opération.");
+      setStep(1);
+      return;
     }
 
     if (dateService > dateAujourdhui) {
-        setError("La date de l'opération ne peut pas être dans le futur.");
-        setStep(1);
-        return;
+      setError("La date de l'opération ne peut pas être dans le futur.");
+      setStep(1);
+      return;
     }
 
-    // IMPORTANT :
+    // Générer une clé une seule fois pour cette tentative de lot.
+    // En cas d'erreur réseau, elle reste disponible pour le nouvel essai.
+    if (!idempotencyKeyRef.current) {
+      if (typeof crypto === "undefined" || !crypto.randomUUID) {
+        setError(
+          "La génération d'une clé sécurisée n'est pas disponible sur ce navigateur."
+        );
+        return;
+      }
+
+      idempotencyKeyRef.current = crypto.randomUUID();
+    }
+
     // Une seule prestation dans details, quantité 1.
     // quantite_operations indique combien d'opérations distinctes créer.
     const payload = {
+      idempotency_key: idempotencyKeyRef.current,
       date_service: form.date_service,
       type_vehicule_id: form.type_vehicule_id,
       laveur_id: form.laveur_id,
@@ -642,11 +653,21 @@ export default function NouvelleOperationModal({
         }),
       });
 
-      const result = await response.json();
+      let result;
+
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error(
+          "Réponse du serveur illisible. Réessaie sans modifier les informations."
+        );
+      }
 
       if (!response.ok || !result.success) {
         throw new Error(
-          result.error || "Échec de l'enregistrement de l'opération."
+          result.error ||
+            result.message ||
+            "Échec de l'enregistrement de l'opération."
         );
       }
 
@@ -655,11 +676,18 @@ export default function NouvelleOperationModal({
         result.message ||
         `${quantity} opération(s) enregistrée(s) avec succès.`;
 
+      // Le serveur a confirmé l'enregistrement : la clé peut être libérée.
+      idempotencyKeyRef.current = null;
+
       resetForm(stationId);
       onClose?.();
       onSuccess?.(message);
     } catch (exception) {
-      setError(exception.message || "Erreur lors de l'enregistrement.");
+      // Ne pas effacer la clé en cas d'échec :
+      // une nouvelle tentative peut réutiliser la même clé.
+      setError(
+        `${exception.message || "Erreur lors de l'enregistrement."} Si la connexion a été interrompue, réessaie avec les mêmes informations.`
+      );
     } finally {
       setSubmitting(false);
     }
@@ -706,7 +734,11 @@ export default function NouvelleOperationModal({
           </button>
         </header>
 
-        <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
+        <form
+          onSubmit={submit}
+          noValidate
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
             {loading ? (
               <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-slate-500">
@@ -759,34 +791,35 @@ export default function NouvelleOperationModal({
                 )}
 
                 {step === 1 && (
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+                  <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
                     <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-3">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#14233B] text-[#D8BD83]">
-                        <CarFront size={19} />
+                          <CarFront size={19} />
                         </div>
 
                         <div>
-                        <h3 className="font-bold text-[#14233B]">
+                          <h3 className="font-bold text-[#14233B]">
                             Choisir le véhicule
-                        </h3>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          </h3>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
                             Sélectionne le type de véhicule à laver.
-                        </p>
+                          </p>
                         </div>
-                    </div>
+                      </div>
 
-                    <div className="w-full sm:w-56">
+                      <div className="w-full sm:w-56">
                         <Field label="Date de l'opération" required>
-                        <Input
+                          <Input
                             type="datetime-local"
                             value={form.date_service}
                             onChange={(value) => update("date_service", value)}
                             required
-                        />
+                          />
                         </Field>
+                      </div>
                     </div>
-                    </div>
+
                     <Field label="Rechercher un véhicule">
                       <div className="relative">
                         <Search
@@ -925,9 +958,7 @@ export default function NouvelleOperationModal({
                             <button
                               key={item.id}
                               type="button"
-                              onClick={() =>
-                                update("prestation_id", item.id)
-                              }
+                              onClick={() => update("prestation_id", item.id)}
                               className={`rounded-xl border-2 p-4 text-left transition ${
                                 active
                                   ? "border-[#D8BD83] bg-[#D8BD83]/10"
@@ -1036,8 +1067,7 @@ export default function NouvelleOperationModal({
                             </div>
                           </div>
                           <p className="text-xl font-extrabold text-[#14233B]">
-                            {money(prixUnitaire, station?.devise)} /
-                            prestation
+                            {money(prixUnitaire, station?.devise)} / prestation
                           </p>
                           <button
                             type="button"
@@ -1144,7 +1174,7 @@ export default function NouvelleOperationModal({
                     <Section
                       icon={CarFront}
                       title="Informations du véhicule"
-                      description="L'immatriculation ou le nom du client doit être renseigné."
+                      description="Les informations du véhicule sont facultatives."
                     >
                       <div className="grid gap-4 sm:grid-cols-2">
                         <Field label="Immatriculation">
@@ -1189,9 +1219,7 @@ export default function NouvelleOperationModal({
                         <Field label="Nom du client">
                           <Input
                             value={form.client_nom}
-                            onChange={(value) =>
-                              update("client_nom", value)
-                            }
+                            onChange={(value) => update("client_nom", value)}
                             placeholder="Nom et prénom"
                           />
                         </Field>
@@ -1208,9 +1236,7 @@ export default function NouvelleOperationModal({
                           <Input
                             type="email"
                             value={form.client_email}
-                            onChange={(value) =>
-                              update("client_email", value)
-                            }
+                            onChange={(value) => update("client_email", value)}
                             placeholder="client@exemple.com"
                           />
                         </Field>
