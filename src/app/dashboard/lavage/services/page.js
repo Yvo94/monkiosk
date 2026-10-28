@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -353,6 +353,7 @@ function StatCard({ label, value, description, icon: Icon, valueColor }) {
 }
 
 export default function ServicesPage() {
+  const idempotencyKeyRef = useRef(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [quantite, setQuantite] = useState(0);
   const [step, setStep] = useState(1);
@@ -913,7 +914,11 @@ export default function ServicesPage() {
       return;
     }
 
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = crypto.randomUUID();
+    }
     const payload = {
+      idempotency_key: idempotencyKeyRef.current,
       date_service: dateService,
       type_vehicule_id: form.type_vehicule_id,
       laveur_id: form.laveur_id,
@@ -960,7 +965,8 @@ export default function ServicesPage() {
       if (!response.ok || !result.success) {
         throw new Error(result.error || "Échec de l'enregistrement.");
       }
-
+      
+      idempotencyKeyRef.current = null;
       setModalOpen(false);
       setSuccess(
         result.message ||
