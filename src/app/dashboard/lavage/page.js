@@ -136,6 +136,8 @@ export default function LavageDashboardPage() {
   const [donnees, setDonnees] = useState(null);
   const [erreur, setErreur] = useState("");
   const [chargement, setChargement] = useState(true);
+  const [modeHorsConnexion, setModeHorsConnexion] = useState(false);
+  const [dateMiseEnCache, setDateMiseEnCache] = useState(null);
 
   const [donneesPrevisions, setDonneesPrevisions] = useState(null);
   const [chargementPrevisions, setChargementPrevisions] = useState(false);
@@ -179,6 +181,7 @@ export default function LavageDashboardPage() {
   }, []);
 
 
+  /*
   const chargerDashboard = useCallback(
     async ({
       silencieux = false,
@@ -246,6 +249,248 @@ export default function LavageDashboardPage() {
     },
     [dateDebut, dateFin]
   );
+  */
+ 
+  const chargerDashboard = useCallback(
+    async ({
+      silencieux = false,
+      debut = dateDebut,
+      fin = dateFin,
+    } = {}) => {
+      if (!silencieux) setChargement(true);
+
+      setErreur("");
+      setModeHorsConnexion(false);
+      setDateMiseEnCache(null);
+
+      if (!debut || !fin) {
+        setChargement(false);
+        return;
+      }
+
+      const formatDateValide = /^\d{4}-\d{2}-\d{2}$/;
+
+      if (
+        !formatDateValide.test(debut) ||
+        !formatDateValide.test(fin)
+      ) {
+        setErreur("Les dates sélectionnées sont invalides.");
+        setChargement(false);
+        return;
+      }
+
+      if (debut > fin) {
+        setErreur(
+          "La date de début doit être antérieure ou égale à la date de fin."
+        );
+        setChargement(false);
+        return;
+      }
+
+      const cleDerniereStation =
+        `maax-lavage-derniere-station:${debut}:${fin}`;
+
+      // Si le navigateur sait déjà qu'il est hors connexion,
+      // restaurer directement le cache sans appeler l'API.
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        try {
+          const stationId = localStorage.getItem(cleDerniereStation);
+
+          if (stationId) {
+            const cleCache =
+              `maax-lavage-dashboard:${stationId}:${debut}:${fin}`;
+
+            const cacheBrut = localStorage.getItem(cleCache);
+
+            if (cacheBrut) {
+              const cache = JSON.parse(cacheBrut);
+
+              if (cache?.donnees?.station?.id === stationId) {
+                setDonnees(cache.donnees);
+                setModeHorsConnexion(true);
+                setDateMiseEnCache(cache.dateEnregistrement || null);
+                setErreur("");
+                setChargement(false);
+                return;
+              }
+            }
+          }
+        } catch (erreurCache) {
+          console.warn(
+            "[Dashboard Lavage] Lecture du cache impossible :",
+            erreurCache
+          );
+        }
+
+        setErreur(
+          "Vous êtes hors connexion et aucune donnée en cache n'est disponible pour cette période."
+        );
+        setChargement(false);
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({
+          date_debut: debut,
+          date_fin: fin,
+        });
+
+        const response = await fetch(
+          `/api/lavage/dashboard?${params.toString()}`,
+          { cache: "no-store" }
+        );
+        console.log("[Dashboard Lavage] Réponse API :", {
+          status: response.status,
+          ok: response.ok,
+          online: navigator.onLine,
+        });
+        console.log("[HORS CONNEXION] État réseau :", {
+          online: navigator.onLine,
+          debut,
+          fin,
+          stationEnCache: localStorage.getItem(
+            `maax-lavage-derniere-station:${debut}:${fin}`
+          ),
+        });
+
+        // Une réponse 401 indique un problème d'authentification.
+        // On ne restaure pas le cache dans ce cas.
+        if (response.status === 401) {
+          // La session n'a pas pu être validée par le serveur.
+          // On restaure uniquement le cache de la station déjà connue
+          // pour permettre la consultation hors connexion.
+          try {
+            const stationId = localStorage.getItem(cleDerniereStation);
+
+            if (stationId) {
+              const cleCache =
+                `maax-lavage-dashboard:${stationId}:${debut}:${fin}`;
+
+              const cacheBrut = localStorage.getItem(cleCache);
+
+              if (cacheBrut) {
+                const cache = JSON.parse(cacheBrut);
+
+                if (cache?.donnees?.station?.id === stationId) {
+                  setDonnees(cache.donnees);
+                  setModeHorsConnexion(true);
+                  setDateMiseEnCache(cache.dateEnregistrement || null);
+                  setErreur("");
+                  setChargement(false);
+                  return;
+                }
+              }
+            }
+          } catch (erreurCache) {
+            console.warn(
+              "[Dashboard Lavage] Lecture du cache impossible :",
+              erreurCache
+            );
+          }
+
+          window.location.replace("/login");
+          return;
+        }
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            result.error || "Impossible de charger le dashboard."
+          );
+        }
+
+        setDonnees(result);
+        setModeHorsConnexion(false);
+        setDateMiseEnCache(null);
+
+        // Le cache est séparé par station et période.
+        // Une erreur de stockage local ne doit pas bloquer le dashboard.
+        try {
+          const stationId = result?.station?.id;
+
+          if (stationId) {
+            const cleCache =
+              `maax-lavage-dashboard:${stationId}:${debut}:${fin}`;
+
+            localStorage.setItem(
+              cleCache,
+              JSON.stringify({
+                donnees: result,
+                dateEnregistrement: new Date().toISOString(),
+              })
+            );
+
+            localStorage.setItem(
+              cleDerniereStation,
+              stationId
+            );
+          }
+        } catch (erreurCache) {
+          console.warn(
+            "[Dashboard Lavage] Cache local indisponible :",
+            erreurCache
+          );
+        }
+      } catch (error) {
+        console.error(
+          "[Dashboard Lavage] Erreur de chargement :",
+          error
+        );
+        console.log("[Dashboard Lavage] Diagnostic réseau :", {
+          message: error.message,
+          online: navigator.onLine,
+        });
+
+        // En cas d'échec réseau, tenter de restaurer le dernier cache
+        // connu pour cette station et cette période.
+        let cacheRestaure = false;
+
+        try {
+          const stationId = localStorage.getItem(
+            cleDerniereStation
+          );
+
+          if (stationId) {
+            const cleCache =
+              `maax-lavage-dashboard:${stationId}:${debut}:${fin}`;
+
+            const cacheBrut = localStorage.getItem(cleCache);
+
+            if (cacheBrut) {
+              const cache = JSON.parse(cacheBrut);
+
+              if (cache?.donnees?.station?.id === stationId) {
+                setDonnees(cache.donnees);
+                setModeHorsConnexion(true);
+                setDateMiseEnCache(
+                  cache.dateEnregistrement || null
+                );
+                setErreur("");
+                cacheRestaure = true;
+              }
+            }
+          }
+        } catch (erreurCache) {
+          console.warn(
+            "[Dashboard Lavage] Lecture du cache impossible :",
+            erreurCache
+          );
+        }
+
+        if (!cacheRestaure) {
+          setErreur(
+            error.message ||
+              "Connexion impossible et aucune donnée locale disponible."
+          );
+        }
+      } finally {
+        setChargement(false);
+      }
+    },
+    [dateDebut, dateFin]
+  );
+
 
   useEffect(() => {
     if (!dateDebut || !dateFin) return;
@@ -283,6 +528,15 @@ export default function LavageDashboardPage() {
         );
 
         if (response.status === 401) {
+          console.error(
+            "[Dashboard Lavage] API 401 : authentification refusée.",
+            {
+              url: window.location.href,
+              date: new Date().toISOString(),
+            }
+          );
+
+          // Redirection conservée pour protéger les données.
           window.location.replace("/login");
           return;
         }
@@ -443,6 +697,38 @@ export default function LavageDashboardPage() {
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 overflow-x-clip px-3 py-4 sm:space-y-8 sm:px-5 sm:py-6 md:px-8 md:py-8">
+      {modeHorsConnexion && (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-amber-900"
+        >
+          <AlertCircle size={20} className="mt-0.5 shrink-0" />
+
+          <div>
+            <p className="text-sm font-semibold">
+              Mode hors connexion — données en cache
+            </p>
+
+            <p className="mt-1 text-xs leading-5">
+              Les statistiques affichées sont les dernières données enregistrées
+              sur cet appareil. Elles peuvent être anciennes.
+              {dateMiseEnCache &&
+                ` Cache enregistré le ${new Date(dateMiseEnCache).toLocaleString(
+                  "fr-FR",
+                  { timeZone: "Africa/Abidjan" }
+                )}.`}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => chargerDashboard()}
+              className="mt-2 text-sm font-semibold underline"
+            >
+              Réessayer la connexion
+            </button>
+          </div>
+        </div>
+      )}
       {/* En-tête */}
       <section data-guide="dashboard" className="relative overflow-hidden rounded-3xl bg-[#14233B] p-4 text-white shadow-lg sm:p-6 md:p-9">
         <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full border-[25px] border-white/[0.04] sm:h-56 sm:w-56" />

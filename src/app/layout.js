@@ -1,5 +1,6 @@
 
 import "./globals.css";
+import ServiceWorkerRegister from "./ServiceWorkerRegister";
 
 export const metadata = {
   metadataBase: new URL("https://monkiosk.vercel.app"),
@@ -71,7 +72,10 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="fr" data-scroll-behavior="smooth">
-      <body>{children}</body>
+      <body>
+        <ServiceWorkerRegister />
+        {children}
+      </body>
     </html>
   );
 }
