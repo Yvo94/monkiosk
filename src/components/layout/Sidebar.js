@@ -25,6 +25,7 @@ import {
   ClipboardList,
   UserRound,
   ArrowLeftRight,
+  ChartNoAxesCombined,
   Building2,
 } from "lucide-react";
 
@@ -109,6 +110,11 @@ const lavageMenuItems = [
     label: "Dépenses",
     href: "/dashboard/lavage/depense",
     icon: ShoppingBag,
+  },
+  {
+    label: "Prévisions financières",
+    href: "/dashboard/lavage/previsions",
+    icon: ChartNoAxesCombined,
   },
   {
     label: "Statistiques",

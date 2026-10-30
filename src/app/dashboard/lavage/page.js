@@ -20,6 +20,7 @@ import {
   Menu,
   X,
   ChevronRight,
+  ChartNoAxesCombined,
 } from "lucide-react";
 
 const rubriques = [
@@ -34,6 +35,12 @@ const rubriques = [
     description: "Suivre les charges et les sorties d'argent.",
     href: "/dashboard/lavage/depense",
     icon: Wallet,
+  },
+  {
+    titre: "Prévisions financières",
+    description: "Estimer le chiffre d’affaires, les commissions et les dépenses à venir.",
+    href: "/dashboard/lavage/previsions",
+    icon: ChartNoAxesCombined,
   },
   {
     titre: "Véhicules",
@@ -758,41 +765,50 @@ export default function LavageDashboardPage() {
             </div>
           </div>
 
+          
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
             <button
               data-guide="nouvelle-operation"
               type="button"
               onClick={() => setModalNouvelleOperation(true)}
-              className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#D8BD83] px-4 py-3 text-sm font-bold text-[#14233B] shadow-sm transition hover:bg-[#e6ce98] active:scale-[0.99] sm:px-5"
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#D8BD83] px-4 py-3 text-sm font-bold text-[#14233B] shadow-sm transition hover:bg-[#e6ce98]"
             >
               <CarFront size={19} />
               Nouvelle opération
             </button>
 
-            <div className="grid grid-cols-2 gap-2 sm:flex">
-              <button
-                type="button"
-                onClick={() => chargerDashboard()}
-                disabled={chargement}
-                className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 px-3 py-2.5 text-xs font-medium transition hover:bg-white/10 disabled:opacity-60 sm:px-4 sm:text-sm"
-              >
-                <RefreshCw
-                  size={16}
-                  className={chargement ? "animate-spin" : ""}
-                />
-                Actualiser
-              </button>
+            <Link
+              href="/dashboard/lavage/previsions"
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#D8BD83]/60 bg-[#D8BD83]/10 px-4 py-3 text-sm font-semibold text-[#D8BD83] transition hover:bg-[#D8BD83]/20"
+            >
+              <ChartNoAxesCombined size={18} />
+              Prévisions financières
+              <ArrowRight size={16} />
+            </Link>
 
-              <button
-                type="button"
-                onClick={() => setMenuRapideOuvert((ouvert) => !ouvert)}
-                aria-expanded={menuRapideOuvert}
-                className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 px-3 py-2.5 text-xs font-medium hover:bg-white/10 sm:hidden"
-              >
-                {menuRapideOuvert ? <X size={17} /> : <Menu size={17} />}
-                Rubriques
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => chargerDashboard()}
+              disabled={chargement}
+              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 px-3 py-2.5 text-sm font-medium transition hover:bg-white/10 disabled:opacity-60 sm:px-4"
+            >
+              <RefreshCw
+                size={16}
+                className={chargement ? "animate-spin" : ""}
+              />
+              Actualiser
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMenuRapideOuvert((ouvert) => !ouvert)}
+              aria-expanded={menuRapideOuvert}
+              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 px-3 py-2.5 text-xs font-medium hover:bg-white/10 sm:hidden"
+            >
+              {menuRapideOuvert ? <X size={17} /> : <Menu size={17} />}
+              Rubriques
+            </button>
+
             <div className="flex justify-start sm:col-span-2">
               <button
                 type="button"
@@ -808,6 +824,7 @@ export default function LavageDashboardPage() {
               </button>
             </div>
           </div>
+
         </div>
 
         {menuRapideOuvert && (
@@ -826,6 +843,7 @@ export default function LavageDashboardPage() {
                   <span className="min-w-0 flex-1">{rubrique.titre}</span>
                   <ChevronRight size={15} className="shrink-0 text-slate-400" />
                 </Link>
+                
               );
             })}
           </nav>

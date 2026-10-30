@@ -185,7 +185,7 @@ export default function GuideInteractif() {
         className="fixed bottom-5 right-5 z-[150] flex min-h-12 items-center gap-2 rounded-full bg-[#14233B] px-4 py-3 text-sm font-semibold text-white shadow-xl transition hover:bg-[#20385B] focus:outline-none focus:ring-4 focus:ring-[#D8BD83]/50"
       >
         <CircleHelp size={19} className="text-[#D8BD83]" />
-        Guide d’utilisation
+        
       </button>
 
       {ouvert && (
@@ -286,7 +286,7 @@ export default function GuideInteractif() {
                     onClick={precedent}
                     className="flex min-h-10 items-center gap-1 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-[#14233B] hover:bg-slate-50"
                   >
-                    <ArrowLeft size={15} />
+                    <ArrowLeft size={16} />
                     Précédent
                   </button>
                 )}
