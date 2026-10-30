@@ -445,25 +445,44 @@ export default function NouvelleOperationModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Gestion du verrouillage du défilement
   useEffect(() => {
     if (!open) return;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const body = document.body;
+    const html = document.documentElement;
 
-    function handleKeyDown(event) {
-      if (event.key === "Escape" && !submitting) {
-        onClose?.();
-      }
-    }
+    // Mémoriser les valeurs précédentes
+    const previousBodyOverflow = body.style.overflow;
+    const previousHtmlOverflow = html.style.overflow;
 
-    window.addEventListener("keydown", handleKeyDown);
+    // Bloquer le défilement derrière la fenêtre
+    //body.style.overflow = "hidden";
+    //html.style.overflow = "hidden";
 
     return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
+      // Restaurer les valeurs initiales à la fermeture
+      body.style.overflow = previousBodyOverflow;
+      html.style.overflow = previousHtmlOverflow;
     };
-  }, [open, submitting, onClose]);
+  }, [open]);
+
+// Gestion de la touche Échap
+useEffect(() => {
+  if (!open) return;
+
+  function handleKeyDown(event) {
+    if (event.key === "Escape" && !submitting) {
+      onClose?.();
+    }
+  }
+
+  window.addEventListener("keydown", handleKeyDown);
+
+  return () => {
+    window.removeEventListener("keydown", handleKeyDown);
+  };
+}, [open, submitting, onClose]);
 
   function closeModal() {
     if (submitting) return;

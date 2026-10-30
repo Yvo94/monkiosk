@@ -306,7 +306,7 @@ export default function PrevisionsRentabilitePage() {
 
   if (erreur && !donnees) {
     return (
-      <div className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 p-6">
+      <div className="mx-auto max-w-4xl rounded-2xl border border-red-200 bg-red-50 p-6">
         <div className="flex items-center gap-3 text-red-700">
           <AlertCircle size={24} />
           <h2 className="font-semibold">
