@@ -46,6 +46,7 @@ async function getAuthenticatedUser(supabase) {
   return user;
 }
 
+/*
 async function getOwnedStations(supabase, userId) {
   const { data, error } = await supabase
     .from("lavages")
@@ -53,6 +54,64 @@ async function getOwnedStations(supabase, userId) {
     .eq("owner_id", userId)
     .eq("actif", true)
     .order("nom");
+
+  if (error) {
+    throw new Error(
+      `Impossible de charger les stations : ${error.message}`
+    );
+  }
+
+  return data || [];
+}
+*/
+async function getOwnedStations(supabase, userId) {
+  // 1. Récupérer le profil de l'utilisateur connecté
+  const { data: profile, error: profileError } = await supabase
+    .from("users")
+    .select("id, role, actif, lavage_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new Error(
+      `Impossible de charger le profil utilisateur : ${profileError.message}`
+    );
+  }
+
+  if (!profile || profile.actif !== true) {
+    return [];
+  }
+
+  // 2. Construire la requête des stations actives
+  let query = supabase
+    .from("lavages")
+    .select("id, nom, devise, actif, owner_id")
+    .eq("actif", true);
+
+  // 3. Administrateur : récupérer ses propres stations
+  if (profile.role === "admin") {
+    query = query.eq("owner_id", userId);
+  }
+
+  // 4. Gérant ou caissier : récupérer uniquement
+  // la station associée à leur compte
+  else if (
+    profile.role === "gerant" ||
+    profile.role === "caissier"
+  ) {
+    if (!profile.lavage_id) {
+      return [];
+    }
+
+    query = query.eq("id", profile.lavage_id);
+  }
+
+  // 5. Les autres rôles ne sont pas autorisés
+  else {
+    return [];
+  }
+
+  const { data, error } = await query.order("nom");
 
   if (error) {
     throw new Error(

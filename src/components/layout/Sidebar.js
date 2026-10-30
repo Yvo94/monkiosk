@@ -131,8 +131,13 @@ const lavageMenuItems = [
     icon: WalletCards,
   },
   {
+    label: "Utilisateurs",
+    href: "/dashboard/lavage/utilisateurs",
+    icon: Users,
+  },
+  {
     label: "Paramètres",
-    href: "/dashboard/lavage/configuration/Parametres",
+    href: "/dashboard/lavage/parametres",
     icon: Settings,
   },
 ];

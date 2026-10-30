@@ -135,20 +135,99 @@ export async function GET(request) {
     const borneDebut = debutJour(dateDebut);
     const borneFin = debutJour(lendemain(dateFin));
 
+    
+        // =====================================================
+    // PROFIL UTILISATEUR
+    // =====================================================
+
+    const { data: profile, error: profileError } = await supabase
+      .from("users")
+      .select("id, nom, role, actif, lavage_id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error("[LAVAGE] Erreur profil :", profileError);
+
+      return reponseErreur(
+        "Impossible de vérifier votre profil utilisateur.",
+        500
+      );
+    }
+
+    if (!profile || !profile.actif) {
+      return reponseErreur(
+        "Votre compte est introuvable ou désactivé.",
+        403
+      );
+    }
+
+    const role = String(profile.role || "").trim().toLowerCase();
+
+    console.log("[LAVAGE] Profil connecté :", {
+      id: profile.id,
+      nom: profile.nom,
+      role,
+      actif: profile.actif,
+      lavage_id: profile.lavage_id,
+      stationDemandee: stationId,
+    });
+
+    // =====================================================
+    // RECHERCHE DE LA STATION
+    // =====================================================
+
     let stationQuery = supabase
       .from("lavages")
       .select("id, nom, devise, actif, owner_id")
-      .eq("owner_id", user.id)
       .eq("actif", true);
 
-    if (stationId) {
-      stationQuery = stationQuery.eq("id", stationId);
+    if (role === "admin") {
+      stationQuery = stationQuery.eq("owner_id", user.id);
+
+      if (stationId) {
+        stationQuery = stationQuery.eq("id", stationId);
+      }
+    } else if (role === "gerant" || role === "caissier") {
+      if (!profile.lavage_id) {
+        return reponseErreur(
+          "Aucune station n'est associée à votre compte.",
+          403
+        );
+      }
+
+      if (stationId && stationId !== profile.lavage_id) {
+        return reponseErreur(
+          "Vous n'êtes pas autorisé à accéder à cette station.",
+          403
+        );
+      }
+
+      stationQuery = stationQuery.eq("id", profile.lavage_id);
+    } else {
+      return reponseErreur(
+        "Votre rôle ne permet pas d'accéder au module Lavage.",
+        403
+      );
     }
 
-    const { data: stations, error: stationError } = await stationQuery;
+    const { data: stations, error: stationError } =
+      await stationQuery;
+
+    console.log("[LAVAGE] Résultat recherche station :", {
+      role,
+      nombreStations: stations?.length || 0,
+      stations,
+      erreur: stationError?.message || null,
+      code: stationError?.code || null,
+    });
 
     if (stationError) {
-      console.error("[LAVAGE] Erreur de recherche de station :", stationError);
+      console.error(
+        "[LAVAGE] Erreur de recherche de station :",
+        stationError
+      );
+
       return reponseErreur(
         "Impossible de vérifier l'accès à la station.",
         500
@@ -157,10 +236,13 @@ export async function GET(request) {
 
     if (!stations?.length) {
       return reponseErreur(
-        stationId
-          ? "Station introuvable ou accès non autorisé."
-          : "Aucune station de lavage active trouvée.",
-        403
+        "Aucune station de lavage active trouvée.",
+        403,
+        {
+          role,
+          lavage_id: profile.lavage_id || null,
+          stationDemandee: stationId || null,
+        }
       );
     }
 
@@ -181,6 +263,7 @@ export async function GET(request) {
     }
 
     const station = stations[0];
+    
     const devise = station.devise || "FCFA";
 
     // Graphique : les 7 jours se terminant à la date de fin sélectionnée.

@@ -56,9 +56,9 @@ const rubriques = [
     icon: Users,
   },
   {
-    titre: "Paramètres",
+    titre: "Utilisateurs",
     description: "Configurer la station et ses caisses.",
-    href: "/dashboard/lavage/parametres",
+    href: "/dashboard/lavage/utilisateurs",
     icon: Settings,
   },
 ];

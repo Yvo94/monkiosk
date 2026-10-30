@@ -252,14 +252,81 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const stationId = searchParams.get("lavage_id");
 
+        // =====================================================
+    // IDENTIFICATION DU PROFIL ET DE LA STATION
+    // =====================================================
+
+    const { data: profile, error: profileError } = await supabase
+      .from("users")
+      .select("id, nom, role, actif, lavage_id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error(
+        "Erreur chargement profil prévisions :",
+        profileError
+      );
+
+      return NextResponse.json(
+        { error: "Impossible de charger votre profil." },
+        { status: 500 }
+      );
+    }
+
+    if (!profile || !profile.actif) {
+      return NextResponse.json(
+        { error: "Votre compte est inactif ou introuvable." },
+        { status: 403 }
+      );
+    }
+
+    // Recherche de la station selon le rôle.
     let stationsQuery = supabase
       .from("lavages")
-      .select("id, nom, devise")
-      .eq("owner_id", user.id)
+      .select("id, nom, devise, owner_id, actif")
       .eq("actif", true);
 
-    if (stationId) {
-      stationsQuery = stationsQuery.eq("id", stationId);
+    if (profile.role === "admin") {
+      // L'administrateur accède aux stations dont il est propriétaire.
+      stationsQuery = stationsQuery.eq("owner_id", user.id);
+
+      if (stationId) {
+        stationsQuery = stationsQuery.eq("id", stationId);
+      }
+
+    } else if (
+      profile.role === "gerant" ||
+      profile.role === "caissier"
+    ) {
+      // Le gérant et le caissier sont rattachés
+      // directement à une station via users.lavage_id.
+
+      if (!profile.lavage_id) {
+        return NextResponse.json(
+          { error: "Aucune station n'est associée à votre compte." },
+          { status: 403 }
+        );
+      }
+
+      // Empêche l'accès à une autre station via l'URL.
+      if (stationId && stationId !== profile.lavage_id) {
+        return NextResponse.json(
+          { error: "Vous n'êtes pas autorisé à accéder à cette station." },
+          { status: 403 }
+        );
+      }
+
+      stationsQuery = stationsQuery.eq(
+        "id",
+        profile.lavage_id
+      );
+
+    } else {
+      return NextResponse.json(
+        { error: "Votre rôle ne permet pas d'accéder aux prévisions." },
+        { status: 403 }
+      );
     }
 
     const { data: stations, error: stationsError } =

@@ -418,7 +418,7 @@ export default function ParametresPage() {
       <div className="flex min-h-[55vh] items-center justify-center">
         <div className="flex items-center gap-3 text-sm text-gray-500">
           <LoaderCircle size={22} className="animate-spin" />
-          Chargement des paramètres...
+          Chargement des paramètres....
         </div>
       </div>
     );
