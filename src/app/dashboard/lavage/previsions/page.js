@@ -186,6 +186,10 @@ export default function PrevisionsRentabilitePage() {
   const historique = donnees?.historique || {};
   const maturite = donnees?.maturite || {};
 
+  // Prévision du prochain rechargement électrique.
+  const rechargementElectricite =
+    previsions?.depenses?.rechargementElectricite || null;
+
   // Prévisions CA limitées à l'horizon choisi.
   const toutesLesPrevisionsCA = Array.isArray(
     previsions?.chiffreAffaires?.jours
@@ -252,7 +256,7 @@ export default function PrevisionsRentabilitePage() {
             budget30Jours
           )} pour l'électricité sur les 30 prochains jours.`,
           detail:
-            "Cette estimation repose sur les dépenses quotidiennes historiques. Elle ne permet pas de connaître le niveau actuel du compteur.",
+            "Cette enveloppe est calculée à partir des dépenses électriques historiques. La date du prochain rechargement est estimée séparément selon le nombre d'opérations entre les rechargements.",
           icone: Zap,
         };
       }
@@ -306,7 +310,7 @@ export default function PrevisionsRentabilitePage() {
 
   if (erreur && !donnees) {
     return (
-      <div className="mx-auto max-w-4xl rounded-2xl border border-red-200 bg-red-50 p-6">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 p-6">
         <div className="flex items-center gap-3 text-red-700">
           <AlertCircle size={24} />
           <h2 className="font-semibold">
@@ -450,8 +454,7 @@ export default function PrevisionsRentabilitePage() {
         />
       </div>
 
-      {/* Graphique  CA */}
-      
+      {/* Graphique CA */}
       <BlocSection
         titre="Évolution prévisionnelle du chiffre d'affaires"
         description={`Estimation quotidienne pour les ${horizonCA} prochains jours.`}
@@ -663,6 +666,157 @@ export default function PrevisionsRentabilitePage() {
         </div>
       </BlocSection>
 
+      {/* Prévision du prochain rechargement électrique */}
+      <BlocSection
+        titre="Prochain rechargement électrique"
+        description="Estimation basée sur le nombre d'opérations de lavage réalisées entre les rechargements."
+        action={
+          rechargementElectricite?.disponible ? (
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                rechargementElectricite.confiance === "élevée"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : rechargementElectricite.confiance === "moyenne"
+                  ? "bg-amber-50 text-amber-700"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              Fiabilité : {rechargementElectricite.confiance}
+            </span>
+          ) : null
+        }
+      >
+        {!rechargementElectricite?.disponible ? (
+          <div className="rounded-xl bg-slate-50 p-5 text-center">
+            <Zap className="mx-auto text-amber-500" size={28} />
+            <p className="mt-2 font-medium text-slate-800">
+              Prévision électrique indisponible
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Enregistrez au moins deux rechargements électriques pour permettre
+              le calcul d'un premier intervalle d'utilisation.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {/* Date estimée */}
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-white p-3 text-amber-600">
+                  <Zap size={25} />
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-slate-600">
+                    Prochaine recharge estimée
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-[#14233B]">
+                    {dateCourte(rechargementElectricite.datePrevue)}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-3 text-sm text-slate-600">
+                Environ{" "}
+                <strong>
+                  {rechargementElectricite.joursRestantsEstimes} jour(s)
+                </strong>{" "}
+                restant(s) selon le rythme récent de votre station.
+              </p>
+            </div>
+
+            {/* Indicateurs électriques */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">
+                  Dernier rechargement
+                </p>
+                <p className="mt-2 font-bold text-slate-900">
+                  {dateCourte(rechargementElectricite.dernierRechargement)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {montant(rechargementElectricite.dernierMontantRecharge)}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">
+                  Opérations par cycle
+                </p>
+                <p className="mt-2 text-xl font-bold text-slate-900">
+                  {Math.round(rechargementElectricite.objectifOperations || 0)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Objectif estimé
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">
+                  Opérations restantes
+                </p>
+                <p className="mt-2 text-xl font-bold text-slate-900">
+                  {Math.round(
+                    rechargementElectricite.operationsRestantesEstimees || 0
+                  )}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Après le dernier rechargement
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">Rythme récent</p>
+                <p className="mt-2 text-xl font-bold text-slate-900">
+                  {Number(
+                    rechargementElectricite.rythmeRecentOperationsParJour || 0
+                  ).toLocaleString("fr-FR", {
+                    maximumFractionDigits: 1,
+                  })}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Opérations par jour
+                </p>
+              </div>
+            </div>
+
+            {/* Explication et fiabilité */}
+            <div className="rounded-xl border border-slate-200 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle
+                  size={19}
+                  className="mt-0.5 shrink-0 text-amber-600"
+                />
+
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    À propos de cette estimation
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    {rechargementElectricite.methode ||
+                      "Estimation statistique basée sur le nombre d'opérations entre les rechargements et le rythme récent de la station."}
+                  </p>
+
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    Le calcul suppose que le compteur est vide à chaque
+                    rechargement. Il ne tient pas compte d'un éventuel crédit
+                    restant au moment de la recharge.
+                  </p>
+
+                  <p className="mt-2 text-xs text-slate-500">
+                    {rechargementElectricite.nombreRechargementsObserves || 0}{" "}
+                    rechargement(s) observé(s) ·{" "}
+                    {rechargementElectricite.nombreIntervallesAnalyses || 0}{" "}
+                    intervalle(s) analysé(s).
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </BlocSection>
+
       {/* Budget des dépenses sur 30 jours */}
       <BlocSection
         titre="Budget des dépenses à prévoir"
@@ -847,7 +1001,7 @@ export default function PrevisionsRentabilitePage() {
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
           <div className="flex items-center gap-2">
             <AlertCircle size={18} className="text-slate-500" />
-            <h2 className="font-semibold text-slate-800">
+            <h2 className="font-semibold text-slate-800 ">
               Limites des prévisions
             </h2>
           </div>

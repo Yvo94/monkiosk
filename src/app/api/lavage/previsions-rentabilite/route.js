@@ -313,6 +313,601 @@ function calculerPrevisionsDepenses(depenses, datesAnalyse, datesPrevisions) {
   };
 }
 
+
+
+function normaliserTexte(valeur) {
+  return String(valeur || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+// Identifie la famille réelle d'une dépense à partir de sa catégorie
+// et de son libellé, même si la catégorie enregistrée est "Autre".
+function determinerFamilleDepense(depense) {
+  const categorie = normaliserTexte(depense.categorie);
+  const libelle = normaliserTexte(depense.libelle);
+  const texte = `${categorie} ${libelle}`;
+
+  if (/salubrite|hygiene|nettoyage|assainissement/.test(texte)) {
+    return {
+      categorie: "Salubrité",
+      nature: "Frais de salubrité et d'entretien",
+    };
+  }
+
+  if (/electricite|courant|rechargement/.test(texte)) {
+    return {
+      categorie: "Électricité",
+      nature: "Facture ou consommation électrique",
+    };
+  }
+
+  if (/eau|sene/.test(texte)) {
+    return {
+      categorie: "Eau",
+      nature: "Approvisionnement ou facture d'eau",
+    };
+  }
+
+  if (
+    /savon|shampoing|shampooing|detergent|degraissant|produit de lavage|produits de lavage/.test(
+      texte
+    )
+  ) {
+    return {
+      categorie: "Produits de lavage",
+      nature: "Détergents, savons, shampoings et dégraissants",
+    };
+  }
+
+  if (/chiffon|eponge|brosse|gant|consommable|accessoire/.test(texte)) {
+    return {
+      categorie: "Consommables",
+      nature: "Chiffons, éponges et accessoires",
+    };
+  }
+
+  if (
+    /maintenance|entretien|reparation|reparations|panne|piece detachee/.test(
+      texte
+    )
+  ) {
+    return {
+      categorie: "Maintenance",
+      nature: "Entretien et réparation des équipements",
+    };
+  }
+
+  if (/installation|amenagement|equipement|travaux/.test(texte)) {
+    return {
+      categorie: "Installations",
+      nature: "Petites réparations et entretien des installations",
+    };
+  }
+
+  return {
+    categorie: depense.categorie || "Non catégorisée",
+    nature: depense.libelle || depense.categorie || "Autre dépense",
+  };
+}
+
+
+function estUnRechargementElectricite(depense) {
+  const texte =
+    `${normaliserTexte(depense.categorie)} ` +
+    `${normaliserTexte(depense.libelle)}`;
+
+  return (
+    /electricite|courant|compteur/.test(texte) &&
+    /rechargement|recharge|credit|unite/.test(texte)
+  );
+}
+
+function calculerPrevisionRechargementElectricite(
+  depenses,
+  services,
+  aujourdHui
+) {
+  // Ne conserver que les dépenses correspondant réellement
+  // à un rechargement électrique.
+  const depensesElectricite = depenses.filter(
+    estUnRechargementElectricite
+  );
+
+  // Regrouper les rechargements effectués le même jour.
+  const rechargesParDate = new Map();
+
+  for (const depense of depensesElectricite) {
+    const date = new Date(depense.date_depense)
+      .toISOString()
+      .slice(0, 10);
+
+    const existante = rechargesParDate.get(date);
+
+    if (existante) {
+      existante.montant += montantNumerique(depense.montant);
+
+      if (
+        new Date(depense.date_depense) >
+        new Date(existante.dateHeure)
+      ) {
+        existante.dateHeure = depense.date_depense;
+      }
+    } else {
+      rechargesParDate.set(date, {
+        date,
+        dateHeure: depense.date_depense,
+        montant: montantNumerique(depense.montant),
+      });
+    }
+  }
+
+  const recharges = [...rechargesParDate.values()].sort(
+    (a, b) => a.date.localeCompare(b.date)
+  );
+
+  if (recharges.length < 2) {
+    return {
+      disponible: false,
+      datePrevue: null,
+      montantMoyenRecharge: arrondir(
+        moyenne(recharges.map((r) => r.montant))
+      ),
+      nombreRechargementsObserves: recharges.length,
+      nombreIntervallesAnalyses: 0,
+      confiance: "insuffisante",
+      explication:
+        "Il faut au moins deux rechargements enregistrés pour commencer à mesurer le nombre d'opérations entre les rechargements.",
+    };
+  }
+
+  const intervalles = [];
+
+  // Mesurer les opérations réalisées entre chaque paire
+  // de rechargements successifs.
+  for (let i = 1; i < recharges.length; i++) {
+    const precedent = recharges[i - 1];
+    const suivant = recharges[i];
+
+    const debut = new Date(precedent.dateHeure).getTime();
+    const fin = new Date(suivant.dateHeure).getTime();
+
+    const dureeJours = (fin - debut) / 86400000;
+
+    if (!Number.isFinite(dureeJours) || dureeJours <= 0) {
+      continue;
+    }
+
+    const nombreOperations = services.filter((service) => {
+      const dateService = new Date(service.date_service).getTime();
+
+      return dateService > debut && dateService <= fin;
+    }).length;
+
+    intervalles.push({
+      dateDebut: precedent.date,
+      dateFin: suivant.date,
+      dureeJours,
+      nombreOperations,
+      montantRecharge: suivant.montant,
+      operationsParJour: nombreOperations / dureeJours,
+    });
+  }
+
+  if (!intervalles.length) {
+    return {
+      disponible: false,
+      datePrevue: null,
+      montantMoyenRecharge: arrondir(
+        moyenne(recharges.map((r) => r.montant))
+      ),
+      nombreRechargementsObserves: recharges.length,
+      nombreIntervallesAnalyses: 0,
+      confiance: "insuffisante",
+      explication:
+        "Les dates des rechargements ne permettent pas encore de calculer des intervalles exploitables.",
+    };
+  }
+
+  // Le nombre habituel d'opérations avant un nouveau
+  // rechargement est estimé avec la médiane historique.
+  const operationsParIntervalle = intervalles
+    .map((intervalle) => intervalle.nombreOperations)
+    .filter((nombre) => nombre > 0);
+
+  if (!operationsParIntervalle.length) {
+    return {
+      disponible: false,
+      datePrevue: null,
+      montantMoyenRecharge: arrondir(
+        moyenne(recharges.map((r) => r.montant))
+      ),
+      nombreRechargementsObserves: recharges.length,
+      nombreIntervallesAnalyses: intervalles.length,
+      confiance: "insuffisante",
+      explication:
+        "Aucune opération terminée n'a été retrouvée entre les rechargements observés.",
+    };
+  }
+
+  const objectifOperations = mediane(operationsParIntervalle);
+
+  const dernierRechargement = recharges[recharges.length - 1];
+  const dernierRechargementTimestamp = new Date(
+    dernierRechargement.dateHeure
+  ).getTime();
+
+  // Nombre d'opérations réalisées depuis le dernier rechargement.
+  const operationsDepuisDernierRechargement = services.filter(
+    (service) =>
+      new Date(service.date_service).getTime() >
+      dernierRechargementTimestamp
+  ).length;
+
+  // Rythme d'activité des 14 derniers jours.
+  const debutActivite = ajouterJours(aujourdHui, -13);
+
+  const operationsRecentes = services.filter((service) => {
+    const date = new Date(service.date_service)
+      .toISOString()
+      .slice(0, 10);
+
+    return date >= debutActivite && date <= aujourdHui;
+  }).length;
+
+  let operationsParJour = operationsRecentes / 14;
+
+  // Si l'activité récente est nulle, utiliser le rythme
+  // moyen observé entre les rechargements historiques.
+  if (operationsParJour <= 0) {
+    operationsParJour = moyenne(
+      intervalles
+        .filter((intervalle) => intervalle.operationsParJour > 0)
+        .map((intervalle) => intervalle.operationsParJour)
+    );
+  }
+
+  if (operationsParJour <= 0) {
+    return {
+      disponible: false,
+      datePrevue: null,
+      montantMoyenRecharge: arrondir(
+        moyenne(recharges.map((r) => r.montant))
+      ),
+      nombreRechargementsObserves: recharges.length,
+      nombreIntervallesAnalyses: intervalles.length,
+      objectifOperations: arrondir(objectifOperations),
+      operationsDepuisDernierRechargement,
+      confiance: "insuffisante",
+      explication:
+        "Le rythme récent de la station ne permet pas encore d'estimer une date de prochain rechargement.",
+    };
+  }
+
+  const operationsRestantes = Math.max(
+    0,
+    objectifOperations - operationsDepuisDernierRechargement
+  );
+
+  const joursRestants =
+    operationsRestantes === 0
+      ? 0
+      : Math.ceil(operationsRestantes / operationsParJour);
+
+  const datePrevue = ajouterJours(aujourdHui, joursRestants);
+
+  // Évaluer la régularité du nombre d'opérations entre rechargements.
+  const ecartType = Math.sqrt(
+    moyenne(
+      operationsParIntervalle.map((nombre) =>
+        Math.pow(nombre - objectifOperations, 2)
+      )
+    )
+  );
+
+  const coefficientVariation =
+    objectifOperations > 0
+      ? ecartType / objectifOperations
+      : 1;
+
+  let confiance = "faible";
+
+  if (
+    intervalles.length >= 3 &&
+    coefficientVariation <= 0.25
+  ) {
+    confiance = "bonne";
+  } else if (
+    intervalles.length >= 2 &&
+    coefficientVariation <= 0.5
+  ) {
+    confiance = "moyenne";
+  }
+
+  return {
+    disponible: true,
+    datePrevue,
+    montantMoyenRecharge: arrondir(
+      moyenne(recharges.map((r) => r.montant))
+    ),
+    dernierRechargement: dernierRechargement.date,
+    dernierMontantRecharge: arrondir(dernierRechargement.montant),
+
+    nombreRechargementsObserves: recharges.length,
+    nombreIntervallesAnalyses: intervalles.length,
+
+    objectifOperations: arrondir(objectifOperations),
+    operationsDepuisDernierRechargement,
+    operationsRestantesEstimees: arrondir(operationsRestantes),
+
+    rythmeRecentOperationsParJour: Number(
+      operationsParJour.toFixed(2)
+    ),
+
+    joursRestantsEstimes: joursRestants,
+
+    confiance,
+
+    methode:
+      "Médiane du nombre d'opérations terminées entre les rechargements, ajustée selon le rythme des 14 derniers jours.",
+
+    avertissement:
+      "La date est indicative. Elle suppose que chaque dépense enregistrée correspond à un événement de rechargement comparable.",
+  };
+}
+
+
+function calculerRecommandationsDepenses(depenses, aujourdHui) {
+  const groupes = new Map();
+
+  for (const depense of depenses) {
+    const famille = determinerFamilleDepense(depense);
+
+    // Regroupement par famille pour reconnaître les libellés différents
+    // qui correspondent à une même nature de dépense.
+    const cle = normaliserTexte(famille.categorie);
+
+    if (!groupes.has(cle)) {
+      groupes.set(cle, {
+        categorie: famille.categorie,
+        libelle: famille.nature,
+        occurrences: new Map(),
+      });
+    }
+
+    const date = new Date(depense.date_depense)
+      .toISOString()
+      .slice(0, 10);
+
+    const groupe = groupes.get(cle);
+
+    // Plusieurs dépenses de la même famille le même jour
+    // sont cumulées en une seule occurrence.
+    groupe.occurrences.set(
+      date,
+      (groupe.occurrences.get(date) || 0) +
+        montantNumerique(depense.montant)
+    );
+  }
+
+  const recommandationsHistoriques = [];
+  const dateLimite = ajouterJours(aujourdHui, 30);
+
+  for (const groupe of groupes.values()) {
+    const occurrences = [...groupe.occurrences.entries()]
+      .map(([date, montant]) => ({ date, montant }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (occurrences.length < 3) continue;
+
+    const intervalles = [];
+
+    for (let i = 1; i < occurrences.length; i++) {
+      const precedent = new Date(`${occurrences[i - 1].date}T12:00:00Z`);
+      const suivant = new Date(`${occurrences[i].date}T12:00:00Z`);
+
+      const jours = Math.round(
+        (suivant - precedent) / 86400000
+      );
+
+      if (jours > 0) intervalles.push(jours);
+    }
+
+    if (intervalles.length < 2) continue;
+
+    const intervalleMoyen = moyenne(intervalles);
+
+    const ecartType = Math.sqrt(
+      moyenne(
+        intervalles.map((intervalle) =>
+          Math.pow(intervalle - intervalleMoyen, 2)
+        )
+      )
+    );
+
+    const coefficientVariation =
+      intervalleMoyen > 0 ? ecartType / intervalleMoyen : 1;
+
+    if (
+      intervalleMoyen < 3 ||
+      intervalleMoyen > 60 ||
+      coefficientVariation > 0.35
+    ) {
+      continue;
+    }
+
+    const derniereOccurrence = occurrences[occurrences.length - 1];
+    const intervallePrevu = Math.max(1, Math.round(intervalleMoyen));
+
+    const prochaineDate = ajouterJours(
+      derniereOccurrence.date,
+      intervallePrevu
+    );
+
+    if (
+      prochaineDate > dateLimite ||
+      prochaineDate <= aujourdHui
+    ) {
+      continue;
+    }
+
+    const montantMoyen = moyenne(
+      occurrences.map((occurrence) => occurrence.montant)
+    );
+
+    // Calcul exact du nombre d'échéances qui tombent
+    // réellement dans les 30 prochains jours.
+    let occurrencesPrevues30Jours = 0;
+    let dateOccurrence = prochaineDate;
+
+    while (dateOccurrence <= dateLimite) {
+      occurrencesPrevues30Jours++;
+
+      dateOccurrence = ajouterJours(
+        dateOccurrence,
+        intervallePrevu
+      );
+    }
+
+    const confiance =
+      occurrences.length >= 4 && coefficientVariation <= 0.2
+        ? "elevee"
+        : "moyenne";
+
+    recommandationsHistoriques.push({
+      datePrevue: prochaineDate,
+      nature: groupe.libelle,
+      categorie: groupe.categorie,
+      montantEstime: arrondir(montantMoyen),
+      montantEstime30Jours: arrondir(
+        montantMoyen * occurrencesPrevues30Jours
+      ),
+      occurrencesPrevues30Jours,
+      origine: "historique",
+      confiance,
+      intervalleMoyenJours: intervallePrevu,
+      nombreOccurrencesObservees: occurrences.length,
+      explication:
+        `Cette famille de dépenses a été observée ${occurrences.length} fois, ` +
+        `avec un intervalle moyen d'environ ${intervallePrevu} jours.`,
+    });
+  }
+
+  return recommandationsHistoriques.sort(
+    (a, b) => a.datePrevue.localeCompare(b.datePrevue)
+  );
+}
+
+function genererSuggestionsDepenses(depenses, recommandationsHistoriques) {
+  const categoriesHabituelles = [
+    {
+      categorie: "Produits de lavage",
+      nature: "Détergents, savons, shampoings et dégraissants",
+    },
+    {
+      categorie: "Consommables",
+      nature: "Chiffons, éponges et accessoires",
+    },
+    {
+      categorie: "Eau",
+      nature: "Approvisionnement ou facture d'eau",
+    },
+    {
+      categorie: "Électricité",
+      nature: "Facture ou consommation électrique",
+    },
+    {
+      categorie: "Maintenance",
+      nature: "Entretien et réparation des équipements",
+    },
+    {
+      categorie: "Salubrité",
+      nature: "Frais de salubrité et d'entretien",
+    },
+    {
+      categorie: "Installations",
+      nature: "Petites réparations et entretien des installations",
+    },
+  ];
+
+  const categoriesDejaConnues = new Set(
+    depenses.map((depense) =>
+      normaliserTexte(determinerFamilleDepense(depense).categorie)
+    )
+  );
+
+  const categoriesDejaRecommandees = new Set(
+    recommandationsHistoriques.map((recommandation) =>
+      normaliserTexte(recommandation.categorie)
+    )
+  );
+
+  return categoriesHabituelles
+    .filter((suggestion) => {
+      const categorie = normaliserTexte(suggestion.categorie);
+
+      return (
+        !categoriesDejaConnues.has(categorie) &&
+        !categoriesDejaRecommandees.has(categorie)
+      );
+    })
+    .map((suggestion) => ({
+      datePrevue: null,
+      nature: suggestion.nature,
+      categorie: suggestion.categorie,
+      montantEstime: null,
+      montantEstime30Jours: null,
+      occurrencesPrevues30Jours: null,
+      origine: "suggestion",
+      confiance: "faible",
+      explication:
+        "Dépense indicative courante pour une station de lavage. " +
+        "Aucun historique suffisant ne permet d'estimer sa date ou son montant. " +
+        "Cette suggestion ne constitue pas une obligation de dépense.",
+    }));
+}
+
+function construirePrevisionsDetailleesDepenses(depenses, aujourdHui) {
+  const historiques = calculerRecommandationsDepenses(
+    depenses,
+    aujourdHui
+  );
+
+  const suggestions = genererSuggestionsDepenses(
+    depenses,
+    historiques
+  );
+
+  const recommandations = [...historiques, ...suggestions];
+
+  const montantEstime30Jours = historiques.reduce(
+    (total, item) => total + item.montantEstime30Jours,
+    0
+  );
+
+  return {
+    recommandations,
+
+    budget30Jours: {
+      montantEstime: arrondir(montantEstime30Jours),
+      nombreDepensesEstimees: historiques.length,
+      nombreDepensesNonEstimees: suggestions.length,
+      montantNonEstime: null,
+      explication:
+        "Le budget estimé additionne les occurrences récurrentes " +
+        "détectées dont la prochaine échéance intervient dans les 30 jours. " +
+        "Les suggestions sans historique fiable ne sont pas chiffrées.",
+    },
+
+    nombreRecommandationsHistoriques: historiques.length,
+    nombreSuggestions: suggestions.length,
+  };
+}
+
+
 function genererRecommandations({
   caHistorique,
   caPrevu,
@@ -506,6 +1101,8 @@ export async function GET(request) {
 
     const debutISO = `${debutFenetre}T00:00:00.000Z`;
     const finISO = `${aujourdHui}T00:00:00.000Z`;
+    const finServicesISO =
+      `${ajouterJours(aujourdHui, 1)}T00:00:00.000Z`;
 
     const services = await chargerToutesLesLignes(() =>
       supabase
@@ -514,9 +1111,21 @@ export async function GET(request) {
         .eq("lavage_id", station.id)
         .eq("statut", "termine")
         .gte("date_service", debutISO)
-        .lt("date_service", finISO)
+        .lt("date_service", finServicesISO)
         .order("date_service", { ascending: true })
     );
+
+    const depensesElectriciteHistoriques =
+        await chargerToutesLesLignes(() =>
+            supabase
+            .from("lavage_depenses")
+            .select("date_depense, libelle, categorie, montant, statut")
+            .eq("lavage_id", station.id)
+            .eq("statut", "payee")
+            .gte("date_depense", debutISO)
+            .lt("date_depense", finServicesISO)
+            .order("date_depense", { ascending: true })
+        );
 
     const datesServices = services
       .map((service) =>
@@ -588,6 +1197,12 @@ export async function GET(request) {
 
     const datesAnalyseDepenses = creerSerieDates(debutAnalyseDepenses, hier);
     const depensesPayees = depenses || [];
+    const previsionRechargementElectricite =
+        calculerPrevisionRechargementElectricite(
+            depensesElectriciteHistoriques,
+            services,
+            aujourdHui
+        );
 
     const totauxDepensesParDate = Object.fromEntries(
       datesHistoriques.map((date) => [date, 0])
@@ -613,10 +1228,16 @@ export async function GET(request) {
     );
 
     const resultatDepenses = calculerPrevisionsDepenses(
-      depensesPayees,
-      datesAnalyseDepenses,
-      datesPrevisions
-    );
+        depensesPayees,
+        datesAnalyseDepenses,
+        datesPrevisions
+        );
+
+        const recommandationsDetailleesDepenses =
+        construirePrevisionsDetailleesDepenses(
+            depensesPayees,
+            aujourdHui
+        );
 
     const totalCAHistorique = datesHistoriques.reduce(
       (total, date) =>
@@ -731,7 +1352,24 @@ export async function GET(request) {
             "Médiane et moyenne pondérée par jour de la semaine, ajustées par la tendance récente.",
         },
 
-        depenses: resultatDepenses,
+        depenses: {
+        ...resultatDepenses,
+
+        rechargementElectricite:
+            previsionRechargementElectricite,
+
+        recommandations:
+            recommandationsDetailleesDepenses.recommandations,
+
+        budget30Jours:
+            recommandationsDetailleesDepenses.budget30Jours,
+
+        nombreRecommandationsHistoriques:
+            recommandationsDetailleesDepenses.nombreRecommandationsHistoriques,
+
+        nombreSuggestions:
+            recommandationsDetailleesDepenses.nombreSuggestions,
+        },
 
         commissions: {
           moyenneQuotidienne: arrondir(commissionsMoyennesParJour),
@@ -753,6 +1391,8 @@ export async function GET(request) {
         "Les prévisions ne peuvent pas encore détecter les ruptures de stock ni programmer une maintenance sans données dédiées.",
         "Les journées sans service enregistré sont traitées comme des journées à zéro activité ; les fermetures ne sont pas distinguées des données manquantes.",
         "Les estimations sont provisoires lorsque l'historique est court ou peu actif.",
+        "Le prochain rechargement électrique est estimé à partir du nombre d'opérations réalisées entre les rechargements historiques et du rythme récent de la station.",
+        "La prévision suppose que les rechargements enregistrés sont comparables. Les recharges partielles, les variations de consommation des équipements et les changements de tarifs peuvent modifier la date réelle.",
       ],
     });
   } catch (error) {
