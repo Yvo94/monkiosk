@@ -22,8 +22,7 @@ import {
   LockKeyhole,
   Droplets,
   CarFront,
-  ClipboardList,
-  UserRound,
+  CircleDollarSign,
   ArrowLeftRight,
   ChartNoAxesCombined,
   Building2,
@@ -115,6 +114,11 @@ const lavageMenuItems = [
     label: "Prévisions financières",
     href: "/dashboard/lavage/previsions",
     icon: ChartNoAxesCombined,
+  },
+  {
+    label: "Synthèse financière",
+    href: "/dashboard/lavage/synthese-financiere",
+    icon: CircleDollarSign,
   },
   {
     label: "Statistiques",
