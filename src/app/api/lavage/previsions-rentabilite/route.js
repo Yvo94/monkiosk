@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-const JOURS_HISTORIQUE = 180;
-const JOURS_PREVISION = 7;
+const JOURS_HISTORIQUE = 360;
+const JOURS_PREVISION = 30;
+const JOURS_PREVISION_COURT = 7;
 const JOURS_MATURITE = 30;
 const JOURS_ANALYSE_DEPENSES = 90;
 const TAILLE_PAGE = 1000;
@@ -39,10 +40,8 @@ function creerSerieDates(debut, finInclus) {
 function moyenne(valeurs) {
   if (!valeurs.length) return 0;
 
-  return (
-    valeurs.reduce((total, valeur) => total + valeur, 0) /
-    valeurs.length
-  );
+  return valeurs.reduce((total, valeur) => total + valeur, 0) /
+    valeurs.length;
 }
 
 function mediane(valeurs) {
@@ -75,6 +74,51 @@ function arrondir(valeur) {
   return Math.round(Number(valeur) || 0);
 }
 
+function calculerMaturite(joursDisponibles) {
+  let baseReferenceJours;
+
+  if (joursDisponibles < 30) {
+    baseReferenceJours = 30;
+  } else if (joursDisponibles < 90) {
+    baseReferenceJours = 90;
+  } else if (joursDisponibles < 180) {
+    baseReferenceJours = 180;
+  } else {
+    baseReferenceJours = 360;
+  }
+
+  const progression = Math.min(
+    100,
+    Math.round((joursDisponibles / baseReferenceJours) * 100)
+  );
+
+  return {
+    joursDisponibles,
+    baseReferenceJours,
+    joursRequis: baseReferenceJours,
+    progression,
+    seuilAtteint: progression >= 100,
+
+    niveau:
+      progression >= 100
+        ? "excellent"
+        : progression >= 70
+          ? "bon"
+          : progression >= 30
+            ? "moyen"
+            : "faible",
+
+    libelle:
+      progression >= 100
+        ? "Historique complet"
+        : progression >= 70
+          ? "Bonne maturité"
+          : progression >= 30
+            ? "Maturité en progression"
+            : "Historique insuffisant",
+  };
+}
+
 function jourSemaine(date) {
   return new Date(`${date}T12:00:00.000Z`).getUTCDay();
 }
@@ -84,26 +128,19 @@ function montantNumerique(valeur) {
   return Number.isFinite(montant) ? Math.max(0, montant) : 0;
 }
 
-/**
- * Récupère toutes les lignes en tenant compte de la pagination Supabase.
- */
 async function chargerToutesLesLignes(creerRequete) {
   let lignes = [];
   let debut = 0;
 
   while (true) {
     const fin = debut + TAILLE_PAGE - 1;
-
-    const { data, error } = await creerRequete()
-      .range(debut, fin);
+    const { data, error } = await creerRequete().range(debut, fin);
 
     if (error) throw error;
 
     lignes = lignes.concat(data || []);
 
-    if (!data || data.length < TAILLE_PAGE) {
-      break;
-    }
+    if (!data || data.length < TAILLE_PAGE) break;
 
     debut += TAILLE_PAGE;
   }
@@ -196,12 +233,20 @@ function calculerPrevisionsCA(historique, datesHistoriques, aujourdHui) {
     fiabilite = "moyenne";
   }
 
+  const totalPrevu30Jours = previsions.reduce(
+    (total, jour) => total + jour.montantPrevu,
+    0
+  );
+
+  const totalPrevu7Jours = previsions
+    .slice(0, JOURS_PREVISION_COURT)
+    .reduce((total, jour) => total + jour.montantPrevu, 0);
+
   return {
     previsions,
-    totalPrevu: previsions.reduce(
-      (total, jour) => total + jour.montantPrevu,
-      0
-    ),
+    totalPrevu: totalPrevu30Jours,
+    totalPrevu7Jours,
+    totalPrevu30Jours,
     moyenneQuotidienneHistorique: arrondir(moyenneHistorique),
     joursHistorique: datesHistoriques.length,
     joursAvecActivite: joursActifs,
@@ -232,12 +277,19 @@ function calculerPrevisionsDepenses(depenses, datesAnalyse, datesPrevisions) {
       totalHistorique: arrondir(totalHistorique),
       moyenneQuotidienne: arrondir(totalHistorique / nombreJours),
       montantPrevu7Jours: arrondir(
+        (totalHistorique / nombreJours) * JOURS_PREVISION_COURT
+      ),
+      montantPrevu30Jours: arrondir(
         (totalHistorique / nombreJours) * JOURS_PREVISION
       ),
     }))
-    .sort((a, b) => b.montantPrevu7Jours - a.montantPrevu7Jours);
+    .sort((a, b) => b.montantPrevu30Jours - a.montantPrevu30Jours);
 
   const montantPrevu7Jours = arrondir(
+    depenseMoyenneQuotidienne * JOURS_PREVISION_COURT
+  );
+
+  const montantPrevu30Jours = arrondir(
     depenseMoyenneQuotidienne * JOURS_PREVISION
   );
 
@@ -251,6 +303,7 @@ function calculerPrevisionsDepenses(depenses, datesAnalyse, datesPrevisions) {
     totalHistorique: arrondir(totalDepenses),
     moyenneQuotidienne: arrondir(depenseMoyenneQuotidienne),
     montantPrevu7Jours,
+    montantPrevu30Jours,
     categories,
     previsionsParJour,
     nombreDepenses: depenses.length,
@@ -276,7 +329,7 @@ function genererRecommandations({
       type: "donnees",
       priorite: "information",
       titre: "Consolider l'historique",
-      message: `L'historique exploitable couvre ${maturite.joursDisponibles} jour(s) sur les ${JOURS_MATURITE} jours nécessaires pour atteindre le premier seuil d'analyse.`,
+      message: `L'historique exploitable couvre ${maturite.joursDisponibles} jour(s) sur les ${maturite.baseReferenceJours} jours de référence.`,
       action:
         "Enregistrer régulièrement les opérations et les dépenses pour améliorer les estimations.",
     });
@@ -330,7 +383,10 @@ function genererRecommandations({
 
   if (
     caHistorique > 0 &&
-    caPrevu < caHistorique * (7 / Math.max(1, maturite.joursDisponibles)) * 0.8
+    caPrevu <
+      caHistorique *
+        (JOURS_PREVISION_COURT / Math.max(1, maturite.joursDisponibles)) *
+        0.8
   ) {
     recommandations.push({
       type: "chiffre_affaires",
@@ -446,15 +502,11 @@ export async function GET(request) {
 
     const aujourdHui = dateAbidjan();
     const hier = ajouterJours(aujourdHui, -1);
-    const debutFenetre = ajouterJours(
-      aujourdHui,
-      -JOURS_HISTORIQUE
-    );
+    const debutFenetre = ajouterJours(aujourdHui, -JOURS_HISTORIQUE);
 
     const debutISO = `${debutFenetre}T00:00:00.000Z`;
     const finISO = `${aujourdHui}T00:00:00.000Z`;
 
-    // Services terminés : chiffre d'affaires et commissions.
     const services = await chargerToutesLesLignes(() =>
       supabase
         .from("lavage_services")
@@ -475,16 +527,11 @@ export async function GET(request) {
 
     const premiereDateService = datesServices[0] || null;
 
-    // La maturité commence à la première opération connue dans la fenêtre.
-    // Les jours sans opération sont conservés à zéro.
     const debutHistorique = premiereDateService
       ? premiereDateService
       : ajouterJours(hier, -29);
 
-    const datesHistoriques = creerSerieDates(
-      debutHistorique,
-      hier
-    );
+    const datesHistoriques = creerSerieDates(debutHistorique, hier);
 
     const historique = Object.fromEntries(
       datesHistoriques.map((date) => [
@@ -498,9 +545,7 @@ export async function GET(request) {
     );
 
     for (const service of services) {
-      const date = new Date(service.date_service)
-        .toISOString()
-        .slice(0, 10);
+      const date = new Date(service.date_service).toISOString().slice(0, 10);
 
       if (!historique[date]) continue;
 
@@ -515,7 +560,6 @@ export async function GET(request) {
       historique[date].nombreServices += 1;
     }
 
-    // Dépenses payées sur la période historique.
     const debutAnalyseDepenses = ajouterJours(
       hier,
       -(JOURS_ANALYSE_DEPENSES - 1)
@@ -526,10 +570,7 @@ export async function GET(request) {
       .select("date_depense, libelle, categorie, montant, statut")
       .eq("lavage_id", station.id)
       .eq("statut", "payee")
-      .gte(
-        "date_depense",
-        `${debutAnalyseDepenses}T00:00:00.000Z`
-      )
+      .gte("date_depense", `${debutAnalyseDepenses}T00:00:00.000Z`)
       .lt("date_depense", finISO)
       .order("date_depense", { ascending: true });
 
@@ -545,11 +586,7 @@ export async function GET(request) {
       );
     }
 
-    const datesAnalyseDepenses = creerSerieDates(
-      debutAnalyseDepenses,
-      hier
-    );
-
+    const datesAnalyseDepenses = creerSerieDates(debutAnalyseDepenses, hier);
     const depensesPayees = depenses || [];
 
     const totauxDepensesParDate = Object.fromEntries(
@@ -557,9 +594,7 @@ export async function GET(request) {
     );
 
     for (const depense of depensesPayees) {
-      const date = new Date(depense.date_depense)
-        .toISOString()
-        .slice(0, 10);
+      const date = new Date(depense.date_depense).toISOString().slice(0, 10);
 
       if (Object.prototype.hasOwnProperty.call(totauxDepensesParDate, date)) {
         totauxDepensesParDate[date] += montantNumerique(depense.montant);
@@ -607,37 +642,40 @@ export async function GET(request) {
         : 0;
 
     const commissionsPrevues7Jours = arrondir(
+      commissionsMoyennesParJour * JOURS_PREVISION_COURT
+    );
+
+    const commissionsPrevues30Jours = arrondir(
       commissionsMoyennesParJour * JOURS_PREVISION
     );
 
     const resultatEstime7Jours =
-      resultatCA.totalPrevu -
+      resultatCA.totalPrevu7Jours -
       commissionsPrevues7Jours -
       resultatDepenses.montantPrevu7Jours;
+
+    const resultatEstime30Jours =
+      resultatCA.totalPrevu30Jours -
+      commissionsPrevues30Jours -
+      resultatDepenses.montantPrevu30Jours;
 
     const joursDisponibles = datesHistoriques.length;
 
     const maturite = {
-      joursDisponibles,
-      joursRequis: JOURS_MATURITE,
-      progression: Math.min(
-        100,
-        Math.round((joursDisponibles / JOURS_MATURITE) * 100)
-      ),
-      seuilAtteint: joursDisponibles >= JOURS_MATURITE,
-      datePremiereOperation: premiereDateService,
-      joursAvecActivite: resultatCA.joursAvecActivite,
-      avertissement:
+    ...calculerMaturite(joursDisponibles),
+    datePremiereOperation: premiereDateService,
+    joursAvecActivite: resultatCA.joursAvecActivite,
+    avertissement:
         "La progression indique la durée couverte depuis la première opération retrouvée, pas une mesure de précision. Les journées à zéro peuvent correspondre à une fermeture ou à une absence d'enregistrement.",
     };
 
     const recommandations = genererRecommandations({
       caHistorique: totalCAHistorique,
-      caPrevu: resultatCA.totalPrevu,
+      caPrevu: resultatCA.totalPrevu7Jours,
       commissionsHistoriques: totalCommissionsHistoriques,
       depensesHistoriques: totalDepensesHistoriques,
       maturite,
-      previsionsCA: resultatCA.previsions,
+      previsionsCA: resultatCA.previsions.slice(0, JOURS_PREVISION_COURT),
       previsionsDepenses: resultatDepenses,
     });
 
@@ -675,7 +713,14 @@ export async function GET(request) {
       previsions: {
         chiffreAffaires: {
           jours: resultatCA.previsions,
-          total7Jours: resultatCA.totalPrevu,
+          total7Jours: resultatCA.totalPrevu7Jours,
+          total15Jours: arrondir(
+            resultatCA.previsions
+              .slice(0, 15)
+              .reduce((total, jour) => total + jour.montantPrevu, 0)
+          ),
+          total30Jours: resultatCA.totalPrevu30Jours,
+          totalPrevu: resultatCA.totalPrevu30Jours,
           moyenneQuotidienneHistorique:
             resultatCA.moyenneQuotidienneHistorique,
           joursHistorique: resultatCA.joursHistorique,
@@ -689,12 +734,15 @@ export async function GET(request) {
         depenses: resultatDepenses,
 
         commissions: {
+          moyenneQuotidienne: arrondir(commissionsMoyennesParJour),
           totalPrevu7Jours: commissionsPrevues7Jours,
+          totalPrevu30Jours: commissionsPrevues30Jours,
           methode:
             "Estimation provisoire basée sur les commissions historiques moyennes par jour.",
         },
 
         resultatEstime7Jours: arrondir(resultatEstime7Jours),
+        resultatEstime30Jours: arrondir(resultatEstime30Jours),
       },
 
       recommandations,

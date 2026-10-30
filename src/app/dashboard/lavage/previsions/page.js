@@ -1,29 +1,29 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft,
+  Activity,
+  AlertCircle,
+  AlertTriangle,
+  ArrowDownRight,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Droplets,
+  Lightbulb,
   RefreshCw,
   TrendingUp,
   Wallet,
-  Receipt,
-  CircleDollarSign,
-  CalendarDays,
-  AlertCircle,
-  CheckCircle2,
-  Lightbulb,
-  Droplets,
-  Activity,
-  Info,
-  ShieldAlert,
+  Zap,
 } from "lucide-react";
 
-const DEVISE_DEFAUT = "FCFA";
+const DEVISE = "FCFA";
+const HORIZONS_CA = [7, 15, 30];
+const HORIZON_DEPENSES = 30;
 
 function aujourdHuiAbidjan() {
-  return new Intl.DateTimeFormat("fr-CA", {
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Africa/Abidjan",
     year: "numeric",
     month: "2-digit",
@@ -31,197 +31,77 @@ function aujourdHuiAbidjan() {
   }).format(new Date());
 }
 
-function montant(valeur, devise = DEVISE_DEFAUT) {
-  const nombre = Number(valeur ?? 0);
-
-  return `${nombre.toLocaleString("fr-FR", {
-    maximumFractionDigits: 0,
-  })} ${devise}`;
+function montant(valeur) {
+  return `${Math.round(Number(valeur) || 0).toLocaleString("fr-FR")} ${DEVISE}`;
 }
 
-function nombre(valeur) {
-  const resultat = Number(valeur ?? 0);
-  return Number.isFinite(resultat) ? resultat : 0;
-}
+function dateCourte(date) {
+  if (!date) return "—";
 
-function dateLisible(date) {
-  if (!date) return "Date indisponible";
-
-  const valeur = new Date(`${date}T12:00:00Z`);
-
-  if (Number.isNaN(valeur.getTime())) return date;
-
-  return new Intl.DateTimeFormat("fr-FR", {
+  return new Date(`${date}T12:00:00`).toLocaleDateString("fr-FR", {
     weekday: "short",
     day: "2-digit",
     month: "short",
-    timeZone: "Africa/Abidjan",
-  }).format(valeur);
+  });
 }
 
-function dateHeureLisible(date) {
-  if (!date) return "";
-
-  const valeur = new Date(date);
-
-  if (Number.isNaN(valeur.getTime())) return "";
-
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "Africa/Abidjan",
-  }).format(valeur);
+function pourcentage(valeur, total) {
+  if (!total) return 0;
+  return Math.round((valeur / total) * 100);
 }
 
-// Recherche une valeur dans les objets imbriqués de l'API.
-// Cela permet de tolérer différentes organisations des indicateurs.
-function trouverValeur(objet, noms, profondeur = 0) {
-  if (!objet || typeof objet !== "object" || profondeur > 5) {
-    return undefined;
-  }
-
-  const cles = Object.keys(objet);
-  const normaliser = (texte) =>
-    texte.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-  for (const nom of noms) {
-    const cle = cles.find(
-      (element) => normaliser(element) === normaliser(nom)
-    );
-
-    if (cle !== undefined && objet[cle] != null) {
-      const valeur = objet[cle];
-
-      if (
-        typeof valeur === "number" ||
-        typeof valeur === "string"
-      ) {
-        const converti = Number(valeur);
-
-        if (Number.isFinite(converti)) return converti;
-      }
-
-      if (typeof valeur === "object") {
-        const resultat = trouverValeur(
-          valeur,
-          ["total", "montant", "valeur", "previsionnel", "estime"],
-          profondeur + 1
-        );
-
-        if (resultat !== undefined) return resultat;
-      }
-    }
-  }
-
-  for (const cle of cles) {
-    if (objet[cle] && typeof objet[cle] === "object") {
-      const resultat = trouverValeur(
-        objet[cle],
-        noms,
-        profondeur + 1
-      );
-
-      if (resultat !== undefined) return resultat;
-    }
-  }
-
-  return undefined;
-}
-
-function Indicateur({
+function CarteIndicateur({
   titre,
   valeur,
-  detail,
-  icon: Icon,
-  couleur = "#14233B",
+  description,
+  icone: Icone,
+  couleur,
 }) {
   return (
-    <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-medium leading-5 text-slate-500 sm:text-sm">
-          {titre}
-        </p>
-
-        <div className="shrink-0 rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B]">
-          <Icon size={20} />
+        <div>
+          <p className="text-sm font-medium text-slate-500">{titre}</p>
+          <p className="mt-3 text-2xl font-bold tracking-tight text-slate-900">
+            {montant(valeur)}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">{description}</p>
         </div>
-      </div>
 
-      <p
-        className="mt-4 break-words text-xl font-bold leading-tight tracking-tight sm:text-2xl"
-        style={{ color: couleur }}
-      >
-        {valeur}
-      </p>
-
-      <p className="mt-2 text-xs leading-5 text-slate-500">
-        {detail}
-      </p>
-    </article>
-  );
-}
-
-function BlocSection({ titre, description, children, icon: Icon }) {
-  return (
-    <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-5 flex items-start gap-3">
-        {Icon && (
-          <div className="shrink-0 rounded-xl bg-[#D8BD83]/20 p-2.5 text-[#14233B]">
-            <Icon size={20} />
-          </div>
-        )}
-
-        <div className="min-w-0">
-          <h2 className="font-bold text-[#14233B]">{titre}</h2>
-          {description && (
-            <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-              {description}
-            </p>
-          )}
+        <div className={`rounded-xl p-3 ${couleur}`}>
+          <Icone size={21} />
         </div>
-      </div>
-
-      {children}
-    </section>
-  );
-}
-
-function BarreHorizontale({ titre, valeur, maximum, devise }) {
-  const largeur =
-    maximum > 0 ? Math.min(100, (valeur / maximum) * 100) : 0;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium text-slate-600 sm:text-sm">
-          {titre}
-        </span>
-        <span className="text-right text-xs font-bold text-[#14233B] sm:text-sm">
-          {montant(valeur, devise)}
-        </span>
-      </div>
-
-      <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-        <div
-          className="h-full rounded-full bg-[#D8BD83] transition-all duration-500"
-          style={{ width: `${largeur}%` }}
-        />
       </div>
     </div>
   );
 }
 
+function BlocSection({ titre, description, children, action }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-slate-900">{titre}</h2>
+          {description && (
+            <p className="mt-1 text-sm text-slate-500">{description}</p>
+          )}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export default function PrevisionsRentabilitePage() {
-  console.log("PAGE PREVISIONS RENTABILITE EXECUTEE");
   const [station, setStation] = useState(null);
   const [donnees, setDonnees] = useState(null);
   const [chargement, setChargement] = useState(true);
   const [actualisation, setActualisation] = useState(false);
   const [erreur, setErreur] = useState("");
-  const [dateCalcul, setDateCalcul] = useState(null);
+  const [horizonCA, setHorizonCA] = useState(7);
 
   const chargerDonnees = useCallback(async (silencieux = false) => {
-    console.log("CHARGER DONNEES APPELEE");
     if (silencieux) {
       setActualisation(true);
     } else {
@@ -231,7 +111,6 @@ export default function PrevisionsRentabilitePage() {
     setErreur("");
 
     try {
-      // 1. Identifier la station active avec le dashboard existant.
       const date = aujourdHuiAbidjan();
 
       const paramsDashboard = new URLSearchParams({
@@ -253,22 +132,18 @@ export default function PrevisionsRentabilitePage() {
 
       if (!reponseDashboard.ok) {
         throw new Error(
-          dashboard.error ||
-            "Impossible de récupérer les informations de la station."
+          dashboard.error || "Impossible de récupérer la station active."
         );
       }
 
       const stationActive = dashboard?.station;
 
       if (!stationActive?.id) {
-        throw new Error(
-          "Aucune station de lavage active n'a été identifiée."
-        );
+        throw new Error("Aucune station de lavage active n'a été identifiée.");
       }
 
       setStation(stationActive);
 
-      // 2. Charger les prévisions statistiques de rentabilité.
       const params = new URLSearchParams({
         lavage_id: stationActive.id,
       });
@@ -287,745 +162,714 @@ export default function PrevisionsRentabilitePage() {
 
       if (!reponse.ok) {
         throw new Error(
-          resultat.error ||
-            "Impossible de calculer les prévisions de rentabilité."
+          resultat.error || "Impossible de calculer les prévisions."
         );
       }
 
-      console.log(
-        "[DEBUG PRÉVISIONS RENTABILITÉ]",
-        JSON.stringify(resultat, null, 2)
-        );
-
       setDonnees(resultat);
-      setDateCalcul(resultat.dateCalcul || new Date().toISOString());
-    } catch (e) {
-      console.error("[Copilote rentabilité]", e);
+    } catch (error) {
+      console.error("[Prévisions rentabilité]", error);
       setErreur(
-        e.message || "Une erreur est survenue pendant le chargement."
+        error.message || "Une erreur est survenue pendant le chargement."
       );
     } finally {
-      console.log("CHARGEMENT TERMINE");
       setChargement(false);
       setActualisation(false);
     }
   }, []);
 
   useEffect(() => {
-    console.log("USEEFFECT PREVISIONS DECLENCHE");
     chargerDonnees();
   }, [chargerDonnees]);
 
+  const previsions = donnees?.previsions || {};
+  const historique = donnees?.historique || {};
+  const maturite = donnees?.maturite || {};
+
+  // Prévisions CA limitées à l'horizon choisi.
+  const toutesLesPrevisionsCA = Array.isArray(
+    previsions?.chiffreAffaires?.jours
+  )
+    ? previsions.chiffreAffaires.jours
+    : [];
+
+  const joursCA = toutesLesPrevisionsCA.slice(0, horizonCA);
+
+  const totalCA = joursCA.reduce(
+    (total, jour) => total + Number(jour.montantPrevu || 0),
+    0
+  );
+
+  const moyenneCA = joursCA.length
+    ? Math.round(totalCA / joursCA.length)
+    : 0;
+
+  // Commissions estimées selon l'horizon sélectionné.
+  const moyenneCommissionsParJour = Number(
+    previsions?.commissions?.moyenneQuotidienne || 0
+  );
+
+  const totalCommissions = Math.round(
+    moyenneCommissionsParJour * horizonCA
+  );
+
+  // Dépenses toujours estimées sur 30 jours.
+  const moyenneDepensesParJour = Number(
+    previsions?.depenses?.moyenneQuotidienne || 0
+  );
+
+  const totalDepenses = Math.round(
+    moyenneDepensesParJour * HORIZON_DEPENSES
+  );
+
+  // Pour le résultat, les dépenses sont ramenées à la période sélectionnée.
+  const depensesSurHorizonCA = Math.round(
+    moyenneDepensesParJour * horizonCA
+  );
+
+  const resultatEstime =
+    totalCA - totalCommissions - depensesSurHorizonCA;
+
+  const categoriesDepenses = Array.isArray(previsions?.depenses?.categories)
+    ? previsions.depenses.categories
+    : [];
+
+  const recommandations = donnees?.recommandations || [];
+
+  const recommandationsDepenses = useMemo(() => {
+    return categoriesDepenses.map((categorie) => {
+      const nom = String(categorie.categorie || "").toLowerCase();
+
+      const budget30Jours = Math.round(
+        Number(categorie.moyenneQuotidienne || 0) * HORIZON_DEPENSES
+      );
+
+      if (nom.includes("électricité") || nom.includes("electricite")) {
+        return {
+          id: "electricite",
+          titre: "Anticiper le rechargement électrique",
+          message: `Prévoir une enveloppe d'environ ${montant(
+            budget30Jours
+          )} pour l'électricité sur les 30 prochains jours.`,
+          detail:
+            "Cette estimation repose sur les dépenses quotidiennes historiques. Elle ne permet pas de connaître le niveau actuel du compteur.",
+          icone: Zap,
+        };
+      }
+
+      if (nom.includes("produit")) {
+        return {
+          id: "produits",
+          titre: "Anticiper le stock de produits",
+          message: `Prévoir environ ${montant(
+            budget30Jours
+          )} pour les produits de lavage sur les 30 prochains jours.`,
+          detail:
+            "Surveille les stocks de shampoing, détergent et autres consommables.",
+          icone: Droplets,
+        };
+      }
+
+      return {
+        id: nom || `categorie-${categorie.categorie}`,
+        titre: `Anticiper : ${categorie.categorie}`,
+        message: `Prévoir environ ${montant(
+          budget30Jours
+        )} sur les 30 prochains jours.`,
+        detail:
+          "Projection calculée à partir des dépenses quotidiennes historiques.",
+        icone: Wallet,
+      };
+    });
+  }, [categoriesDepenses]);
+
+  const montantMaximum = Math.max(
+    ...joursCA.map((jour) => Number(jour.montantPrevu || 0)),
+    1
+  );
+
   if (chargement && !donnees) {
     return (
-      <main className="flex min-h-[50vh] items-center justify-center px-4">
+      <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-center">
           <RefreshCw
-            size={28}
-            className="mx-auto animate-spin text-[#14233B]"
+            className="mx-auto animate-spin text-[#D8BD83]"
+            size={32}
           />
-          <p className="mt-4 text-sm font-medium text-slate-600">
-            Analyse de la rentabilité de votre station...
+          <p className="mt-4 text-sm text-slate-500">
+            Calcul des prévisions de votre station...
           </p>
         </div>
-      </main>
+      </div>
     );
   }
 
   if (erreur && !donnees) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
-          <div className="flex items-center gap-2 font-semibold text-red-800">
-            <AlertCircle size={20} />
-            Chargement impossible
-          </div>
-
-          <p className="mt-3 break-words text-sm text-red-700">
-            {erreur}
-          </p>
-
-          <button
-            type="button"
-            onClick={() => chargerDonnees()}
-            className="mt-4 min-h-11 rounded-xl bg-[#14233B] px-4 py-2.5 text-sm font-semibold text-white"
-          >
-            Réessayer
-          </button>
+      <div className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-red-50 p-6">
+        <div className="flex items-center gap-3 text-red-700">
+          <AlertCircle size={24} />
+          <h2 className="font-semibold">
+            Impossible de charger les prévisions
+          </h2>
         </div>
-      </main>
+
+        <p className="mt-3 text-sm text-red-600">{erreur}</p>
+
+        <button
+          onClick={() => chargerDonnees()}
+          className="mt-5 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+        >
+          Réessayer
+        </button>
+      </div>
     );
   }
 
   if (!donnees) return null;
-    const devise = donnees?.station?.devise || DEVISE_DEFAUT;
-
-    const previsions = donnees?.previsions || {};
-
-    const caPrevisionnel = nombre(
-    previsions?.chiffreAffaires?.total7Jours
-    );
-
-    const commissionsPrevisionnelles = nombre(
-    previsions?.commissions?.totalPrevu7Jours
-    );
-
-    const depensesPrevisionnelles = nombre(
-    previsions?.depenses?.montantPrevu7Jours
-    );
-
-    const resultatPrevisionnel = nombre(
-    previsions?.resultatEstime7Jours
-    );
-
-  const historique = donnees.historique || {};
-  const maturite = donnees.maturite || {};
-
-  const totalCA = caPrevisionnel;
-
-  const totalCommissions = commissionsPrevisionnelles;
-
-  const totalDepenses = depensesPrevisionnelles;
-
-  const resultatEstime = resultatPrevisionnel;
-
-  const totalHistoriqueCA =
-    trouverValeur(historique, [
-      "totalCA",
-      "chiffreAffaires",
-      "caTotal",
-    ]) ?? 0;
-
-  const totalHistoriqueCommissions =
-    trouverValeur(historique, [
-      "totalCommissions",
-      "commissionsTotales",
-      "commissions",
-    ]) ?? 0;
-
-  const totalHistoriqueDepenses =
-    trouverValeur(historique, [
-      "totalDepenses",
-      "depensesPayees",
-      "depenses",
-    ]) ?? 0;
-
-  const resultatHistorique =
-    trouverValeur(historique, [
-      "resultatEstime",
-      "resultatNet",
-      "beneficeNet",
-      "resteEstime",
-    ]) ??
-    totalHistoriqueCA -
-      totalHistoriqueCommissions -
-      totalHistoriqueDepenses;
-
-  const joursDisponibles = nombre(maturite.joursDisponibles);
-  const joursRequis = nombre(maturite.joursRequis) || 30;
-  const progression = Math.min(
-    100,
-    nombre(maturite.progression) ||
-      Math.round((joursDisponibles / joursRequis) * 100)
-  );
-
-  const recommandations = Array.isArray(donnees.recommandations)
-    ? donnees.recommandations
-    : [];
-
-  const limites = Array.isArray(donnees.limites)
-    ? donnees.limites
-    : [];
-
-  // Extraction des séries journalières, selon la structure renvoyée par l'API.
-  function trouverSerie(objet, noms, profondeur = 0) {
-    if (!objet || typeof objet !== "object" || profondeur > 4) {
-      return [];
-    }
-
-    for (const nom of noms) {
-      const valeur = objet[nom];
-
-      if (
-        Array.isArray(valeur) &&
-        valeur.some((ligne) => ligne && typeof ligne === "object")
-      ) {
-        return valeur;
-      }
-    }
-
-    for (const valeur of Object.values(objet)) {
-      if (valeur && typeof valeur === "object") {
-        const resultat = trouverSerie(
-          valeur,
-          noms,
-          profondeur + 1
-        );
-
-        if (resultat.length) return resultat;
-      }
-    }
-
-    return [];
-  }
-
-  const serieCA = Array.isArray(
-    donnees?.previsions?.chiffreAffaires?.jours
-    )
-    ? donnees.previsions.chiffreAffaires.jours
-    : [];
-
-  const lireMontantJour = (jour, noms) =>
-    trouverValeur(jour, noms) ?? 0;
-
-  const maximumGraphique = Math.max(
-    1,
-    ...serieCA.map((jour) =>
-      nombre(
-        lireMontantJour(jour, [
-          "montantPrevu",
-          "montant",
-          "valeur",
-          "chiffreAffaires",
-          "ca",
-        ])
-      )
-    )
-  );
-
-  const nombreDepensesObservees = nombre(
-    donnees?.previsions?.depenses?.nombreDepenses
-  );
-
-  const fiabilite = String(
-    donnees?.previsions?.chiffreAffaires?.fiabilite ?? "faible"
-    ).toLowerCase();
-
-  const fiabiliteTexte =
-    fiabilite === "bonne" || fiabilite === "elevee"
-      ? "Bonne"
-      : fiabilite === "moyenne"
-        ? "Moyenne"
-        : "Faible";
-
-  const couleurFiabilite =
-    fiabiliteTexte === "Bonne"
-      ? "bg-emerald-100 text-emerald-800"
-      : fiabiliteTexte === "Moyenne"
-        ? "bg-blue-100 text-blue-800"
-        : "bg-amber-100 text-amber-800";
 
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-5 overflow-x-clip px-3 py-4 sm:space-y-7 sm:px-5 sm:py-6 md:px-8 md:py-8">
+    <div className="mx-auto w-full max-w-6xl space-y-6 pb-10">
       {/* En-tête */}
-      <section className="relative overflow-hidden rounded-3xl bg-[#14233B] p-5 text-white shadow-lg sm:p-7 md:p-9">
-        <div className="pointer-events-none absolute -right-10 -top-12 h-48 w-48 rounded-full border-[25px] border-white/[0.04] sm:h-60 sm:w-60" />
-        <div className="pointer-events-none absolute -bottom-16 right-24 h-40 w-40 rounded-full bg-[#D8BD83]/10 blur-2xl" />
-
-        <div className="relative">
-          <Link
-            href="/dashboard/lavage"
-            className="mb-6 inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/10 sm:text-sm"
-          >
-            <ArrowLeft size={16} />
-            Retour au tableau de bord
-          </Link>
-
-          <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-            <div className="min-w-0">
-              <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold tracking-[0.15em] text-[#D8BD83] sm:text-xs">
-                <Droplets size={17} />
-                MAAX BUSINESS · LAVAGE
-              </div>
-
-              <h1 className="text-2xl font-bold leading-tight sm:text-3xl md:text-4xl">
-                Copilote de rentabilité
-              </h1>
-
-              <p className="mt-3 max-w-2xl text-xs leading-6 text-slate-300 sm:text-sm">
-                Anticipez vos recettes, vos commissions et vos dépenses
-                pour mieux piloter les résultats de votre station.
-              </p>
-
-              <p className="mt-4 text-sm font-semibold text-white">
-                {station?.nom || donnees.station?.nom || "Ma station"}
-              </p>
-
-              <p className="mt-1 text-xs text-slate-400">
-                Analyse calculée le {dateHeureLisible(dateCalcul)}
-              </p>
+      <div className="overflow-hidden rounded-3xl bg-[#14233B] p-6 text-white shadow-lg md:p-8">
+        <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
+          <div>
+            <div className="mb-3 flex items-center gap-2 text-sm text-[#D8BD83]">
+              <Activity size={17} />
+              <span>MAAX BUSINESS · PILOTAGE INTELLIGENT</span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => chargerDonnees(true)}
-              disabled={actualisation}
-              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#D8BD83] px-4 py-3 text-sm font-bold text-[#14233B] transition hover:bg-[#e6ce98] disabled:opacity-60"
-            >
-              <RefreshCw
-                size={17}
-                className={actualisation ? "animate-spin" : ""}
-              />
-              Actualiser l’analyse
-            </button>
-          </div>
-        </div>
-      </section>
+            <h1 className="text-2xl font-bold md:text-3xl">
+              Prévisions & rentabilité
+            </h1>
 
-      {erreur && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
-          <p>
-            Actualisation impossible. Les derniers résultats chargés sont
-            conservés à l’écran.
-          </p>
-        </div>
-      )}
-
-      {/* Maturité des données */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B]">
-              <Activity size={21} />
-            </div>
-
-            <div>
-              <h2 className="font-bold text-[#14233B]">
-                Maturité des données
-              </h2>
-
-              <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-                {joursDisponibles} jour(s) d’historique analysé(s) sur un
-                objectif de {joursRequis} jours.
-              </p>
-            </div>
-          </div>
-
-          <span
-            className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${
-              maturite.seuilAtteint
-                ? "bg-emerald-100 text-emerald-800"
-                : "bg-amber-100 text-amber-800"
-            }`}
-          >
-            {maturite.seuilAtteint
-              ? "Seuil de maturité atteint"
-              : "Historique en constitution"}
-          </span>
-        </div>
-
-        <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-[#D8BD83] transition-all duration-500"
-            style={{ width: `${progression}%` }}
-          />
-        </div>
-
-        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
-          <span>{progression}% de l’objectif</span>
-          <span>
-            {nombre(maturite.joursAvecActivite)} jour(s) avec activité
-          </span>
-        </div>
-
-        {!maturite.seuilAtteint && (
-          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-amber-800">
-            <Info size={16} className="mt-0.5 shrink-0" />
-            Les premières estimations sont provisoires. Continuez à
-            enregistrer régulièrement les prestations et les dépenses.
-          </p>
-        )}
-      </section>
-
-      {/* Indicateurs prévisionnels */}
-      <section>
-        <div className="mb-4">
-          <h2 className="text-lg font-bold text-[#14233B] sm:text-xl">
-            Résultats prévisionnels
-          </h2>
-          <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-            Estimations statistiques pour les sept prochains jours.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
-          <Indicateur
-            titre="CA prévisionnel"
-            valeur={montant(totalCA, devise)}
-            detail="Recettes attendues sur 7 jours"
-            icon={TrendingUp}
-          />
-
-          <Indicateur
-            titre="Commissions estimées"
-            valeur={montant(totalCommissions, devise)}
-            detail="Rémunération prévisionnelle des laveurs"
-            icon={Receipt}
-            couleur="#B45309"
-          />
-
-          <Indicateur
-            titre="Dépenses estimées"
-            valeur={montant(totalDepenses, devise)}
-            detail="Projection des dépenses payées"
-            icon={Wallet}
-            couleur="#B45309"
-          />
-
-          <Indicateur
-            titre="Résultat estimé"
-            valeur={montant(resultatEstime, devise)}
-            detail="CA − commissions − dépenses estimées"
-            icon={CircleDollarSign}
-            couleur={resultatEstime < 0 ? "#B91C1C" : "#166534"}
-          />
-        </div>
-      </section>
-
-      {/* Répartition des prévisions */}
-      <BlocSection
-        titre="Répartition de la rentabilité"
-        description="Comparaison des recettes attendues et des principales sorties estimées."
-        icon={TrendingUp}
-      >
-        <div className="space-y-5">
-          <BarreHorizontale
-            titre="Chiffre d’affaires"
-            valeur={Math.max(0, totalCA)}
-            maximum={Math.max(
-              1,
-              totalCA,
-              totalCommissions,
-              totalDepenses,
-              Math.abs(resultatEstime)
-            )}
-            devise={devise}
-          />
-
-          <BarreHorizontale
-            titre="Commissions laveurs"
-            valeur={Math.max(0, totalCommissions)}
-            maximum={Math.max(
-              1,
-              totalCA,
-              totalCommissions,
-              totalDepenses,
-              Math.abs(resultatEstime)
-            )}
-            devise={devise}
-          />
-
-          <BarreHorizontale
-            titre="Dépenses estimées"
-            valeur={Math.max(0, totalDepenses)}
-            maximum={Math.max(
-              1,
-              totalCA,
-              totalCommissions,
-              totalDepenses,
-              Math.abs(resultatEstime)
-            )}
-            devise={devise}
-          />
-
-          <div className="rounded-xl bg-[#14233B] p-4 text-white">
-            <p className="text-xs text-slate-300">
-              Résultat après charges prises en compte
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
+              Anticipez les recettes, les dépenses et les besoins de votre
+              station pour mieux préparer les prochains jours.
             </p>
 
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <p
-                className={`break-words text-2xl font-bold ${
-                  resultatEstime < 0 ? "text-red-300" : "text-[#D8BD83]"
-                }`}
-              >
-                {montant(resultatEstime, devise)}
-              </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-slate-300">
+              <span className="flex items-center gap-2">
+                <CalendarDays size={15} />
+                Prévisions CA sur {horizonCA} jours
+              </span>
 
-              {totalCA > 0 && (
-                <p className="text-xs text-slate-300">
-                  Marge estimée :{" "}
-                  {((resultatEstime / totalCA) * 100).toLocaleString(
-                    "fr-FR",
-                    { maximumFractionDigits: 1 }
-                  )}
-                  %
-                </p>
+              <span className="text-slate-500">•</span>
+              <span>Dépenses sur 30 jours</span>
+
+              {station?.nom && (
+                <>
+                  <span className="text-slate-500">•</span>
+                  <span>{station.nom}</span>
+                </>
               )}
             </div>
           </div>
-        </div>
-      </BlocSection>
 
-      {/* Prévisions quotidiennes */}
-      <BlocSection
-        titre="Prévisions quotidiennes du chiffre d’affaires"
-        description="Chaque barre représente le chiffre d’affaires estimé pour une journée."
-        icon={CalendarDays}
-      >
-        {serieCA.length === 0 ? (
-          <div className="rounded-xl bg-slate-50 p-6 text-center">
-            <Info size={24} className="mx-auto text-slate-400" />
-            <p className="mt-3 text-sm font-medium text-slate-700">
-              Série journalière non disponible
+          <button
+            onClick={() => chargerDonnees(true)}
+            disabled={actualisation}
+            className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/20 disabled:opacity-50 md:self-center"
+          >
+            <RefreshCw
+              size={16}
+              className={actualisation ? "animate-spin" : ""}
+            />
+            Actualiser
+          </button>
+        </div>
+      </div>
+
+      {/* Fiabilité */}
+      <div className="flex flex-col justify-between gap-3 rounded-2xl border border-[#D8BD83]/40 bg-[#D8BD83]/10 p-4 md:flex-row md:items-center">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-white p-2 text-[#14233B]">
+            <Activity size={20} />
+          </div>
+
+          <div>
+            <p className="font-semibold text-[#14233B]">
+              Niveau de maturité des données
             </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Les indicateurs globaux sont affichés, mais la structure
-              journalière de l’API doit être vérifiée pour tracer ce graphique.
+            <p className="mt-1 text-sm text-slate-600">
+              {maturite.joursDisponibles || 0} jours disponibles sur{" "}
+              {maturite.joursRequis || 30} jours nécessaires.
             </p>
           </div>
-        ) : (
-          <div className="grid grid-cols-7 gap-1.5 sm:gap-3">
-            {serieCA.map((jour, index) => {
-              const valeur = nombre(
-                lireMontantJour(jour, [
-                  "montantPrevu",
-                  "montant",
-                  "valeur",
-                  "chiffreAffaires",
-                  "ca",
-                ])
-              );
+        </div>
 
-              const date =
-                jour.date || jour.jour || jour.datePrevue || "";
+        <div className="min-w-36">
+          <div className="mb-1 flex justify-between text-xs font-medium text-slate-600">
+            <span>Progression</span>
+            <span>{maturite.progression || 0}%</span>
+          </div>
 
-              const hauteur =
-                valeur > 0
-                  ? Math.max(5, (valeur / maximumGraphique) * 100)
-                  : 3;
+          <div className="h-2 overflow-hidden rounded-full bg-white">
+            <div
+              className="h-full rounded-full bg-[#D8BD83]"
+              style={{
+                width: `${Math.min(Number(maturite.progression || 0), 100)}%`,
+              }}
+            />
+          </div>
+        </div>
+      </div>
 
-              return (
-                <div
-                  key={date || index}
-                  className="flex min-w-0 flex-col items-center"
-                  title={`${date} : ${montant(valeur, devise)}`}
+      {/* Indicateurs */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <CarteIndicateur
+          titre="CA prévisionnel"
+          valeur={totalCA}
+          description={`Recettes estimées sur ${horizonCA} jours`}
+          icone={TrendingUp}
+          couleur="bg-blue-50 text-blue-700"
+        />
+
+        <CarteIndicateur
+          titre="Commissions laveurs"
+          valeur={totalCommissions}
+          description={`Rémunérations estimées sur ${horizonCA} jours`}
+          icone={Wallet}
+          couleur="bg-purple-50 text-purple-700"
+        />
+
+        <CarteIndicateur
+          titre="Dépenses prévisionnelles"
+          valeur={totalDepenses}
+          description="Dépenses estimées sur 30 jours"
+          icone={ArrowDownRight}
+          couleur="bg-amber-50 text-amber-700"
+        />
+
+        <CarteIndicateur
+          titre="Résultat estimé"
+          valeur={resultatEstime}
+          description={`Après commissions et dépenses sur ${horizonCA} jours`}
+          icone={Activity}
+          couleur="bg-emerald-50 text-emerald-700"
+        />
+      </div>
+
+      {/* Graphique  CA */}
+      
+      <BlocSection
+        titre="Évolution prévisionnelle du chiffre d'affaires"
+        description={`Estimation quotidienne pour les ${horizonCA} prochains jours.`}
+        action={
+          <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+            Fiabilité :{" "}
+            {previsions?.chiffreAffaires?.fiabilite || "Non précisée"}
+          </span>
+        }
+      >
+        <div className="space-y-6">
+          {/* Sélecteur */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-medium text-slate-600">
+              Choisir la période
+            </p>
+
+            <div className="flex rounded-xl bg-slate-100 p-1">
+              {HORIZONS_CA.map((horizon) => (
+                <button
+                  key={horizon}
+                  type="button"
+                  onClick={() => setHorizonCA(horizon)}
+                  aria-pressed={horizonCA === horizon}
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                    horizonCA === horizon
+                      ? "bg-[#14233B] text-white shadow-sm"
+                      : "text-slate-600 hover:bg-white"
+                  }`}
                 >
-                  <span className="mb-2 min-h-8 break-words text-center text-[9px] font-semibold leading-4 text-slate-600 sm:text-[11px]">
-                    {valeur.toLocaleString("fr-FR")}
-                  </span>
-
-                  <div className="flex h-28 w-full items-end justify-center rounded-t-lg bg-slate-50 sm:h-36">
-                    <div
-                      className="w-full max-w-10 rounded-t-md bg-[#D8BD83] transition-all duration-500"
-                      style={{ height: `${hauteur}%` }}
-                    />
-                  </div>
-
-                  <span className="mt-2 text-center text-[9px] capitalize leading-4 text-slate-500 sm:text-[11px]">
-                    {dateLisible(date)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </BlocSection>
-
-      {/* Historique */}
-      <BlocSection
-        titre="Historique analysé"
-        description="Données historiques utilisées pour estimer la rentabilité."
-        icon={Activity}
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-slate-100 p-4">
-            <p className="text-xs text-slate-500">CA historique</p>
-            <p className="mt-2 break-words text-lg font-bold text-[#14233B]">
-              {montant(totalHistoriqueCA, devise)}
-            </p>
+                  {horizon} jours
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="rounded-xl border border-slate-100 p-4">
-            <p className="text-xs text-slate-500">
-              Commissions historiques
-            </p>
-            <p className="mt-2 break-words text-lg font-bold text-[#14233B]">
-              {montant(totalHistoriqueCommissions, devise)}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-slate-100 p-4">
-            <p className="text-xs text-slate-500">Dépenses payées</p>
-            <p className="mt-2 break-words text-lg font-bold text-[#14233B]">
-              {montant(totalHistoriqueDepenses, devise)}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-slate-100 p-4">
-            <p className="text-xs text-slate-500">
-              Résultat historique estimé
-            </p>
-            <p
-              className={`mt-2 break-words text-lg font-bold ${
-                resultatHistorique < 0 ? "text-red-700" : "text-emerald-700"
-              }`}
-            >
-              {montant(resultatHistorique, devise)}
-            </p>
-          </div>
-        </div>
-
-        {maturite.datePremiereOperation && (
-          <p className="mt-4 text-xs leading-5 text-slate-500">
-            Première opération prise en compte :{" "}
-            {dateLisible(maturite.datePremiereOperation)}.
-          </p>
-        )}
-      </BlocSection>
-
-      {/* Fiabilité et dépenses */}
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <BlocSection
-          titre="Fiabilité des estimations"
-          description="Le niveau de confiance dépend de la quantité et de la qualité de l’historique."
-          icon={ShieldAlert}
-        >
-          <div className="flex items-center gap-3">
-            <span
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${couleurFiabilite}`}
-            >
-              Fiabilité {fiabiliteTexte.toLowerCase()}
-            </span>
-          </div>
-
-          <p className="mt-4 text-xs leading-6 text-slate-600">
-            Les montants affichés sont des estimations statistiques et ne
-            constituent pas une garantie de recettes ou de bénéfices.
-            Les dépenses exceptionnelles et les changements d’activité
-            peuvent modifier sensiblement les résultats.
-          </p>
-        </BlocSection>
-
-        <BlocSection
-          titre="Vigilance sur les dépenses"
-          description="Une projection est plus pertinente lorsque les charges sont régulièrement enregistrées."
-          icon={Wallet}
-        >
-          {nombreDepensesObservees > 0 &&
-          nombreDepensesObservees <= 5 ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <p className="flex items-start gap-2 text-xs leading-5 text-amber-900">
-                <AlertCircle size={17} className="mt-0.5 shrink-0" />
-                Le calcul repose sur un historique limité de{" "}
-                {nombreDepensesObservees} dépense(s) observée(s). Le montant
-                prévu peut être sous-estimé, notamment si certaines charges
-                sont occasionnelles.
+          {/* Total et moyenne */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-sm text-slate-500">
+                CA prévisionnel sur {horizonCA} jours
+              </p>
+              <p className="mt-1 text-xl font-bold text-[#14233B]">
+                {montant(totalCA)}
               </p>
             </div>
-          ) : (
-            <p className="text-xs leading-6 text-slate-600">
-              Pensez à enregistrer toutes les dépenses payées, y compris
-              les charges récurrentes et les dépenses exceptionnelles.
+
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-sm text-slate-500">
+                Moyenne quotidienne estimée
+              </p>
+              <p className="mt-1 text-xl font-bold text-[#14233B]">
+                {montant(moyenneCA)}
+              </p>
+            </div>
+          </div>
+
+          {/* Barres du graphique */}
+          {joursCA.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-500">
+              Aucune prévision quotidienne disponible.
             </p>
+          ) : (
+            <div className="overflow-x-auto pb-3">
+              <div
+                className="grid min-w-[650px] gap-3"
+                style={{
+                  gridTemplateColumns: `repeat(${joursCA.length}, minmax(0, 1fr))`,
+                }}
+              >
+                {joursCA.map((jour) => {
+                  const valeur = Number(jour.montantPrevu || 0);
+                  const hauteur =
+                    valeur > 0
+                      ? Math.max((valeur / montantMaximum) * 100, 3)
+                      : 0;
+
+                  return (
+                    <div
+                      key={jour.date}
+                      className="flex min-w-0 flex-col items-center"
+                    >
+                      <p className="mb-2 min-h-8 text-center text-[10px] font-semibold leading-4 text-slate-600 sm:text-xs">
+                        {valeur.toLocaleString("fr-FR")}
+                      </p>
+
+                      <div className="flex h-48 w-full items-end justify-center rounded-t-lg bg-slate-50">
+                        <div
+                          className="w-full max-w-12 rounded-t-lg transition-all duration-300"
+                          style={{
+                            height: `${hauteur}%`,
+                            background:
+                              "linear-gradient(to top, #14233B 0%, #D8BD83 100%)",
+                          }}
+                        />
+                      </div>
+
+                      <p className="mt-3 text-center text-[10px] capitalize text-slate-500 sm:text-xs">
+                        {dateCourte(jour.date)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
-          <Link
-            href="/dashboard/lavage/depense"
-            className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#14233B] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#20385B]"
-          >
-            Consulter les dépenses
-            <ArrowLeft size={16} className="rotate-180" />
-          </Link>
-        </BlocSection>
-      </section>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span
+              className="h-3 w-3 rounded-sm"
+              style={{
+                background:
+                  "linear-gradient(to top, #14233B 0%, #D8BD83 100%)",
+              }}
+            />
+            Prévision quotidienne du chiffre d'affaires
+          </div>
+        </div>
+      </BlocSection>
 
       {/* Recommandations */}
       <BlocSection
-        titre="Recommandations du copilote"
-        description="Points de vigilance issus des données disponibles."
-        icon={Lightbulb}
+        titre="Recommandations pour votre station"
+        description="Actions à anticiper à partir de l'activité et des dépenses enregistrées."
       >
-        {recommandations.length === 0 ? (
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-sm text-slate-600">
-              Aucune recommandation particulière n’a été générée.
-              Continuez à enregistrer les opérations et les charges pour
-              enrichir l’analyse.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {recommandations.map((recommandation, index) => {
-              const texte =
-                typeof recommandation === "string"
-                  ? recommandation
-                  : recommandation.message ||
-                    recommandation.description ||
-                    recommandation.titre ||
-                    "Consultez les données de rentabilité.";
+        <div className="space-y-3">
+          {recommandationsDepenses.map((item) => {
+            const Icone = item.icone;
 
-              return (
-                <div
-                  key={recommandation.id || index}
-                  className="flex items-start gap-3 rounded-xl border border-slate-200 p-3 sm:p-4"
-                >
-                  <div className="shrink-0 rounded-lg bg-[#D8BD83]/20 p-2 text-[#14233B]">
-                    <Lightbulb size={17} />
+            return (
+              <div
+                key={item.id}
+                className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-white p-2 text-amber-600">
+                    <Icone size={20} />
                   </div>
 
-                  <p className="text-xs leading-6 text-slate-700 sm:text-sm">
-                    {texte}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-slate-900">
+                      {item.titre}
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-700">
+                      {item.message}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      {item.detail}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {recommandations.map((item, index) => (
+            <div
+              key={`${item.type || "recommandation"}-${index}`}
+              className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-white p-2 text-blue-700">
+                  <Lightbulb size={20} />
+                </div>
+
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold text-slate-900">
+                      {item.titre}
+                    </p>
+
+                    {item.priorite && (
+                      <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase text-blue-700">
+                        {item.priorite.replaceAll("_", " ")}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="mt-1 text-sm text-slate-700">
+                    {item.message}
+                  </p>
+
+                  {item.action && (
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      <strong>Action conseillée :</strong> {item.action}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {recommandationsDepenses.length === 0 &&
+            recommandations.length === 0 && (
+              <div className="rounded-xl bg-slate-50 p-5 text-center">
+                <CheckCircle2
+                  className="mx-auto text-emerald-600"
+                  size={25}
+                />
+                <p className="mt-2 font-medium text-slate-800">
+                  Aucune alerte particulière
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Les données disponibles ne signalent pas de point nécessitant
+                  une attention immédiate.
+                </p>
+              </div>
+            )}
+        </div>
+      </BlocSection>
+
+      {/* Budget des dépenses sur 30 jours */}
+      <BlocSection
+        titre="Budget des dépenses à prévoir"
+        description="Répartition estimée des dépenses sur les 30 prochains jours."
+      >
+        {categoriesDepenses.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-500">
+            Aucune catégorie de dépense disponible.
+          </p>
+        ) : (
+          <div className="space-y-5">
+            {categoriesDepenses.map((categorie, index) => {
+              const budgetCategorie30Jours = Math.round(
+                Number(categorie.moyenneQuotidienne || 0) *
+                  HORIZON_DEPENSES
+              );
+
+              const part = pourcentage(
+                budgetCategorie30Jours,
+                totalDepenses
+              );
+
+              const nomCategorie = String(
+                categorie.categorie || ""
+              ).toLowerCase();
+
+              const electricite =
+                nomCategorie.includes("électricité") ||
+                nomCategorie.includes("electricite");
+
+              return (
+                <div key={`${categorie.categorie}-${index}`}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      {electricite ? (
+                        <Zap size={17} className="text-amber-500" />
+                      ) : (
+                        <Wallet size={17} className="text-slate-500" />
+                      )}
+
+                      <span className="text-sm font-medium text-slate-700">
+                        {categorie.categorie}
+                      </span>
+                    </div>
+
+                    <strong className="text-sm text-slate-900">
+                      {montant(budgetCategorie30Jours)}
+                    </strong>
+                  </div>
+
+                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={`h-full rounded-full ${
+                        electricite ? "bg-amber-400" : "bg-[#14233B]"
+                      }`}
+                      style={{ width: `${part}%` }}
+                    />
+                  </div>
+
+                  <p className="mt-1 text-xs text-slate-400">
+                    {part}% du budget prévisionnel sur 30 jours
                   </p>
                 </div>
               );
             })}
+
+            <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+              <span className="text-sm font-semibold text-slate-700">
+                Budget total à prévoir sur 30 jours
+              </span>
+
+              <span className="text-lg font-bold text-[#14233B]">
+                {montant(totalDepenses)}
+              </span>
+            </div>
           </div>
         )}
       </BlocSection>
 
-      {/* Limites de l'analyse */}
-      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
-        <div className="flex items-start gap-3">
-          <div className="shrink-0 rounded-xl bg-white p-2.5 text-slate-600 shadow-sm">
-            <Info size={19} />
+      {/* Historique et méthode */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <BlocSection
+          titre="Historique de la station"
+          description="Données utilisées pour établir les prévisions."
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-slate-50 p-4">
+              <p className="text-xs text-slate-500">Chiffre d'affaires</p>
+              <p className="mt-2 text-lg font-bold text-slate-900">
+                {montant(historique.chiffreAffaires)}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-4">
+              <p className="text-xs text-slate-500">Commissions</p>
+              <p className="mt-2 text-lg font-bold text-slate-900">
+                {montant(historique.commissions)}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-4">
+              <p className="text-xs text-slate-500">Dépenses payées</p>
+              <p className="mt-2 text-lg font-bold text-slate-900">
+                {montant(historique.depensesPayees)}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-4">
+              <p className="text-xs text-slate-500">Résultat historique</p>
+              <p className="mt-2 text-lg font-bold text-emerald-700">
+                {montant(
+                  historique.resultatApresCommissionsEtDepenses
+                )}
+              </p>
+            </div>
           </div>
 
-          <div className="min-w-0">
-            <h2 className="font-bold text-[#14233B]">
-              À savoir sur cette analyse
+          <p className="mt-4 text-xs text-slate-500">
+            Période : {dateCourte(historique.debut)} au{" "}
+            {dateCourte(historique.fin)} · {historique.jours || 0} jours.
+          </p>
+        </BlocSection>
+
+        <BlocSection
+          titre="Comprendre les estimations"
+          description="Méthode et précautions d'interprétation."
+        >
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <CheckCircle2
+                className="mt-0.5 text-emerald-600"
+                size={18}
+              />
+              <div>
+                <p className="text-sm font-medium text-slate-800">
+                  Prévision du chiffre d'affaires
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  {previsions?.chiffreAffaires?.methode ||
+                    "Méthode statistique basée sur l'historique disponible."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <Clock3 className="mt-0.5 text-blue-600" size={18} />
+              <div>
+                <p className="text-sm font-medium text-slate-800">
+                  Estimation des dépenses
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  {previsions?.depenses?.avertissement ||
+                    "Les dépenses sont estimées à partir de l'historique disponible."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <AlertTriangle
+                className="mt-0.5 text-amber-600"
+                size={18}
+              />
+              <div>
+                <p className="text-sm font-medium text-slate-800">
+                  Résultat estimé
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Ce résultat n'est pas un bénéfice comptable. Il ne tient
+                  compte que du chiffre d'affaires, des commissions et des
+                  dépenses enregistrées dans l'application. Pour le résultat
+                  affiché, les dépenses sont ramenées à la période CA
+                  sélectionnée.
+                </p>
+              </div>
+            </div>
+          </div>
+        </BlocSection>
+      </div>
+
+      {/* Limites */}
+      {Array.isArray(donnees.limites) && donnees.limites.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={18} className="text-slate-500" />
+            <h2 className="font-semibold text-slate-800">
+              Limites des prévisions
             </h2>
-
-            <p className="mt-2 text-xs leading-6 text-slate-600">
-              Le résultat estimé n’est pas un bénéfice comptable définitif.
-              Il prend uniquement en compte les recettes, les commissions et
-              les dépenses intégrées au calcul. Les stocks, les achats à
-              venir, les réparations et les autres charges non enregistrées
-              ne sont pas nécessairement inclus.
-            </p>
-
-            {limites.length > 0 && (
-              <ul className="mt-3 space-y-2">
-                {limites.map((limite, index) => (
-                  <li
-                    key={index}
-                    className="flex items-start gap-2 text-xs leading-5 text-slate-600"
-                  >
-                    <CheckCircle2
-                      size={15}
-                      className="mt-0.5 shrink-0 text-slate-400"
-                    />
-                    <span>
-                      {typeof limite === "string"
-                        ? limite
-                        : limite.message ||
-                          limite.description ||
-                          limite.titre ||
-                          ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
-        </div>
-      </section>
 
-      <p className="pb-2 text-[11px] leading-5 text-slate-400 sm:text-xs">
-        MAAX Business · Copilote de rentabilité · Prévisions indicatives
-        calculées à partir des données enregistrées.
+          <ul className="mt-3 space-y-2">
+            {donnees.limites.map((limite, index) => (
+              <li
+                key={index}
+                className="flex items-start gap-2 text-xs leading-5 text-slate-500"
+              >
+                <span className="mt-1">•</span>
+                <span>{limite}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-center text-xs text-slate-400">
+        Prévisions statistiques · {station?.nom || "MAAX Business"} ·
+        Actualisées à la demande
       </p>
-    </main>
+    </div>
   );
 }

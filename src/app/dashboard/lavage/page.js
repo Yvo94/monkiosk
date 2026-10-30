@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import NouvelleOperationModal from "@/components/lavage/NouvelleOperationModal";
-import GuideInteractif from "@/components/guide/GuideInteractif";
+//import GuideInteractif from "@/components/guide/GuideInteractif";
 import Link from "next/link";
 import {
   CarFront,
@@ -36,12 +36,12 @@ const rubriques = [
     href: "/dashboard/lavage/depense",
     icon: Wallet,
   },
-  {
+  /*{
     titre: "Prévisions financières",
     description: "Estimer le chiffre d’affaires, les commissions et les dépenses à venir.",
     href: "/dashboard/lavage/previsions",
     icon: ChartNoAxesCombined,
-  },
+  },*/
   {
     titre: "Véhicules",
     description: "Consulter les véhicules et leur historique.",
@@ -777,14 +777,14 @@ export default function LavageDashboardPage() {
               Nouvelle opération
             </button>
 
-            <Link
+            {/*<Link
               href="/dashboard/lavage/previsions"
               className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#D8BD83]/60 bg-[#D8BD83]/10 px-4 py-3 text-sm font-semibold text-[#D8BD83] transition hover:bg-[#D8BD83]/20"
             >
               <ChartNoAxesCombined size={18} />
               Prévisions financières
               <ArrowRight size={16} />
-            </Link>
+            </Link>*/}
 
             <button
               type="button"
@@ -1091,13 +1091,24 @@ export default function LavageDashboardPage() {
             </div>
           </div>
 
-          {!chargementPrevisions && donneesPrevisions && (
-            <span
-              className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${couleurFiabilite}`}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {!chargementPrevisions && donneesPrevisions && (
+                <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${couleurFiabilite}`}>
+                  Fiabilité {libelleFiabilite.toLowerCase()}
+                </span>
+              )}
+            </div>
+
+            <Link
+              href="/dashboard/lavage/previsions"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#14233B] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#20385B] active:scale-[0.98] sm:text-sm"
             >
-              Fiabilité {libelleFiabilite.toLowerCase()}
-            </span>
-          )}
+              <TrendingUp size={16} />
+              <span>Prévisions détaillées</span>
+              <ArrowRight size={16} />
+            </Link>
+          </div>
         </div>
 
         {chargementPrevisions && !donneesPrevisions ? (
@@ -1474,7 +1485,7 @@ export default function LavageDashboardPage() {
           chargerDashboard({ silencieux: true });
         }}
       />
-      <GuideInteractif />
+      {/* <GuideInteractif />*/}
     </main>
   );
 }
