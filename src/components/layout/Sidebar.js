@@ -29,29 +29,17 @@ import {
 } from "lucide-react";
 
 const kioskMenuItems = [
-  { label: "Accueil", href: "/dashboard", icon: Home },
-  { label: "Catégories", href: "/dashboard/categories", icon: Tags },
-  { label: "Produits", href: "/dashboard/produits", icon: Package },
-  { label: "Ventes", href: "/dashboard/ventes", icon: ShoppingCart },
-  { label: "Achats", href: "/dashboard/achats", icon: ShoppingBag },
-  { label: "Dépenses", href: "/dashboard/depenses", icon: Receipt },
-  { label: "Stock", href: "/dashboard/stock", icon: Boxes },
-  { label: "Caisses", href: "/dashboard/caisse", icon: WalletCards },
-  {
-    label: "Statistiques",
-    href: "/dashboard/statistiques",
-    icon: BarChart3,
-  },
-  {
-    label: "Utilisateurs",
-    href: "/dashboard/utilisateurs",
-    icon: Users,
-  },
-  {
-    label: "Paramètres",
-    href: "/dashboard/parametres",
-    icon: Settings,
-  },
+  { label: "Accueil", href: "/dashboard/kiosque/", icon: Home },
+  { label: "Catégories", href: "/dashboard/kiosque/categories", icon: Tags },
+  { label: "Produits", href: "/dashboard/kiosque/produits", icon: Package },
+  { label: "Ventes", href: "/dashboard/kiosque/ventes", icon: ShoppingCart },
+  { label: "Achats", href: "/dashboard/kiosque/achats", icon: ShoppingBag },
+  { label: "Dépenses", href: "/dashboard/kiosque/depenses", icon: Receipt },
+  { label: "Stock", href: "/dashboard/kiosque/stock", icon: Boxes },
+  { label: "Caisses", href: "/dashboard/kiosque/caisse", icon: WalletCards },
+  { label: "Statistiques", href: "/dashboard/kiosque/statistiques", icon: BarChart3 },
+  { label: "Utilisateurs", href: "/dashboard/kiosque/utilisateurs", icon: Users },
+  { label: "Paramètres", href: "/dashboard/kiosque/parametres", icon: Settings },
 ];
 
 const lavageMenuItems = [

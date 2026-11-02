@@ -4,6 +4,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import NewSaleModal from "@/components/ventes/NewSaleModal";
+import NewProductModal from "@/components/produits/NewProductModal";
+
 import {
   ShoppingCart,
   Package,
@@ -97,43 +99,43 @@ const shortcuts = [
   },
   {
     title: "Nouveau produit",
-    href: "/dashboard/produits/nouveau",
+    action: "new-product",
     icon: Package,
     color: "bg-blue-500",
   },
   {
     title: "Gérer catégories",
-    href: "/dashboard/categories",
+    href: "/dashboard/kiosque/categories",
     icon: Grid2X2,
     color: "bg-purple-500",
   },
   {
     title: "Enregistrer un achat",
-    href: "/dashboard/achats/nouveau",
+    href: "/dashboard/kiosque/achats/nouveau",
     icon: Truck,
     color: "bg-orange-500",
   },
   {
     title: "Voir le stock",
-    href: "/dashboard/stock",
+    href: "/dashboard/kiosque/stock",
     icon: Boxes,
     color: "bg-cyan-500",
   },
   {
     title: "Ouvrir caisse",
-    href: "/dashboard/caisse",
+    href: "/dashboard/kiosque/caisse",
     icon: WalletCards,
     color: "bg-rose-500",
   },
   {
     title: "Enregistrer une dépense",
-    href: "/dashboard/depenses/nouveau",
+    href: "/dashboard/kiosque/depenses/nouveau",
     icon: FileText,
     color: "bg-indigo-500",
   },
   {
     title: "Voir les statistiques",
-    href: "/dashboard/statistiques",
+    href: "/dashboard/kiosque/statistiques",
     icon: BarChart3,
     color: "bg-slate-500",
   },
@@ -325,8 +327,7 @@ function RecentSales({ sales }) {
    RACCOURCIS
 ============================================================ */
 
-
-function QuickActions({ onNewSale }) {
+function QuickActions({ onNewSale, onNewProduct }) {
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-5">
       <h2 className="text-lg font-bold text-gray-900">
@@ -337,13 +338,19 @@ function QuickActions({ onNewSale }) {
         {shortcuts.map((shortcut) => {
           const Icon = shortcut.icon;
 
-          if (shortcut.action === "new-sale") {
+          if (
+            shortcut.action === "new-sale" ||
+            shortcut.action === "new-product"
+          ) {
+            const isProduct = shortcut.action === "new-product";
+            const handleClick = isProduct ? onNewProduct : onNewSale;
+
             return (
               <button
                 key={shortcut.title}
                 type="button"
-                onClick={onNewSale}
-                className="flex flex-col items-center gap-3 rounded-xl border border-gray-100 p-4 text-center transition hover:border-emerald-300 hover:bg-emerald-50"
+                onClick={handleClick}
+                className="flex flex-col items-center gap-3 rounded-xl border border-gray-100 p-4 text-center transition hover:border-gray-200 hover:bg-gray-50"
               >
                 <span
                   className={`flex h-11 w-11 items-center justify-center rounded-xl text-white ${shortcut.color}`}
@@ -460,6 +467,9 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState("votre kiosque");
   const [currentDate, setCurrentDate] = useState(null);
   const [newSaleOpen, setNewSaleOpen] = useState(false);
+  const [newProductOpen, setNewProductOpen] = useState(false);
+  const [modalNouvelleOperation, setModalNouvelleOperation] = useState(false);
+
   useEffect(() => {
   setCurrentDate(new Date());
   }, []);
@@ -499,20 +509,75 @@ export default function DashboardPage() {
         return;
       }
       
+            
       const user = session.user;
 
-      const { data: kiosk, error: kioskError } = await supabase
-        .from("kiosques")
-        .select("id, nom, devise")
-        .eq("owner_id", user.id)
-        .eq("actif", true)
-        .maybeSingle();
+      const contextResponse = await fetch("/api/auth/context", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
 
-      if (kioskError) throw kioskError;
 
-      if (!kiosk) {
-        throw new Error("Aucun kiosque actif trouvé.");
+      if (contextResponse.status === 401) {
+        window.location.replace("/login");
+        return;
       }
+
+      if (!contextResponse.ok) {
+        throw new Error("Impossible de récupérer les modules du compte.");
+      }
+
+      
+      const context = await contextResponse.json();
+      const modules = context.modules || [];
+
+      // Vérifier l'accès au module Kiosque
+      const kiosqueModule = modules.find(
+        (module) => module.code === "kiosque"
+      );
+
+      if (!kiosqueModule?.etablissement?.id) {
+        window.location.replace("/structures/kiosque");
+        return;
+      }
+
+      // Récupérer directement le kiosque depuis le contexte sécurisé
+      const kiosk = {
+        id: kiosqueModule.etablissement.id,
+        nom: kiosqueModule.etablissement.nom,
+        devise: kiosqueModule.etablissement.devise || "FCFA",
+      };
+
+      const { data: authResult, error: authError } =
+        await supabase.auth.getUser();
+
+      const authId = authResult?.user?.id;
+
+      const { data: diagnosticProfile, error: profileDiagnosticError } =
+        await supabase
+          .from("users")
+          .select("id, nom, role, kiosque_id, actif")
+          .eq("id", authId)
+          .maybeSingle();
+
+      const { data: permissionResult, error: permissionError } =
+        await supabase.rpc("maax_a_le_droit", {
+          p_kiosque_id: kiosk.id,
+          p_module: "ventes",
+          p_action: "consulter",
+        });
+
+      const { data: diagnosticSales, error: diagnosticSalesError } =
+        await supabase
+          .from("kiosque_ventes")
+          .select("id, kiosque_id, statut, montant_total")
+          .eq("kiosque_id", kiosk.id);
+
+      const { data: salesByStatus, error: salesByStatusError } =
+        await supabase
+          .from("kiosque_ventes")
+          .select("statut")
+          .eq("kiosque_id", kiosk.id);
 
 
       let query = supabase
@@ -589,7 +654,6 @@ export default function DashboardPage() {
           .select("id, nom, stock_actuel, stock_minimum, unite, prix_vente")
           .eq("kiosque_id", kiosk.id)
           .eq("actif", true),
-
 
         
         supabase
@@ -910,13 +974,23 @@ export default function DashboardPage() {
               : "xl:grid-cols-[1.55fr_1fr]"
           }`}
         >
-          <QuickActions onNewSale={() => setNewSaleOpen(true)} />
+          <QuickActions
+            onNewSale={() => setNewSaleOpen(true)}
+            onNewProduct={() => setNewProductOpen(true)}
+          />
 
           <NewSaleModal
             open={newSaleOpen}
             onClose={() => setNewSaleOpen(false)}
-            onSaved={loadDashboard}
+            onSaved={() => loadDashboard(true)}
           />
+
+          <NewProductModal
+            open={newProductOpen}
+            onClose={() => setNewProductOpen(false)}
+            onSaved={() => loadDashboard(true)}
+          />
+
           <StockAlert
             products={lowStock}
             dismissed={dismissed}

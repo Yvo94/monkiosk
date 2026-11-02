@@ -17,7 +17,7 @@ const MODULES = {
     description:
       "Gérez vos produits, ventes, achats, stocks, dépenses et caisses.",
     icone: Store,
-    destination: "/dashboard",
+    destination: "/dashboard/kiosque",
     couleur: "from-[#14233B] to-[#263F60]",
   },
   lavage: {

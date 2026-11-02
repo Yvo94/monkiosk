@@ -1,5 +1,5 @@
 
-const CACHE_NAME = "maax-business-v1";
+const CACHE_NAME = "maax-business-v2";
 const OFFLINE_URL = "/offline.html";
 
 const APP_ASSETS = [
@@ -10,48 +10,78 @@ const APP_ASSETS = [
   "/icons/maax-512-maskable.png",
 ];
 
+// Installation
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS))
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await cache.addAll(APP_ASSETS);
+    })
   );
 
   self.skipWaiting();
 });
 
+// Activation et nettoyage des anciens caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
+    caches.keys().then(async (keys) => {
+      await Promise.all(
         keys
-          .filter((key) => key.startsWith("maax-business-") && key !== CACHE_NAME)
+          .filter(
+            (key) =>
+              key.startsWith("maax-business-") &&
+              key !== CACHE_NAME
+          )
           .map((key) => caches.delete(key))
-      )
-    )
-  );
+      );
 
-  self.clients.claim();
+      await self.clients.claim();
+    })
+  );
 });
 
+// Gestion des requêtes
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Ne jamais intercepter les écritures ou les requêtes API.
-  if (
-    request.method !== "GET" ||
-    url.origin !== self.location.origin ||
-    url.pathname.startsWith("/api/")
-  ) {
+  // Ne pas intercepter les requêtes autres que GET
+  if (request.method !== "GET") return;
+
+  // Ne pas intercepter les requêtes externes
+  if (url.origin !== self.location.origin) return;
+
+  // Ne jamais mettre en cache les API
+  if (url.pathname.startsWith("/api/")) return;
+
+  // Les navigations doivent toujours privilégier le réseau
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(async () => {
+        const cache = await caches.open(CACHE_NAME);
+        const offlinePage = await cache.match(OFFLINE_URL);
+
+        return (
+          offlinePage ||
+          new Response("Vous êtes hors connexion.", {
+            status: 503,
+            headers: {
+              "Content-Type": "text/plain; charset=utf-8",
+            },
+          })
+        );
+      })
+    );
+
     return;
   }
 
-  // Les ressources statiques Next.js peuvent être réutilisées hors ligne.
+  // Les fichiers statiques Next.js :
+  // réseau en priorité, cache uniquement en secours.
   if (url.pathname.startsWith("/_next/static/")) {
     event.respondWith(
-      caches.open(CACHE_NAME).then(async (cache) => {
-        const cached = await cache.match(request);
-
-        if (cached) return cached;
+      (async () => {
+        const cache = await caches.open(CACHE_NAME);
 
         try {
           const response = await fetch(request);
@@ -61,28 +91,14 @@ self.addEventListener("fetch", (event) => {
           }
 
           return response;
-        } catch {
+        } catch (error) {
+          const cachedResponse = await cache.match(request);
+
+          if (cachedResponse) return cachedResponse;
+
           return new Response("", { status: 503 });
         }
-      })
-    );
-
-    return;
-  }
-
-  // Pour les pages, essayer le réseau avant d'afficher la page hors ligne.
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(async () => {
-        const cache = await caches.open(CACHE_NAME);
-        return (
-          (await cache.match(OFFLINE_URL)) ||
-          new Response("Vous êtes hors connexion.", {
-            status: 503,
-            headers: { "Content-Type": "text/plain; charset=utf-8" },
-          })
-        );
-      })
+      })()
     );
   }
 });
