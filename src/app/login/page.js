@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Eye,
@@ -14,8 +14,9 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -49,12 +50,36 @@ export default function LoginPage() {
         return;
       }
 
-      //router.replace("/dashboard");
-      router.replace("/structures");
+      // Vérifier les droits et l'état de la licence.
+      const contextResponse = await fetch("/api/auth/context", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const context = await contextResponse.json();
+
+      if (!contextResponse.ok) {
+        throw new Error(
+          context.error || "Impossible de vérifier votre espace."
+        );
+      }
+
+      // Si le client ne dispose d'aucun module accessible,
+      // il doit passer par la page d'activation.
+      if (!context.licence?.active) {
+        router.replace("/activation-licence");
+      } else {
+        // Client disposant déjà de modules accessibles.
+        router.replace("/structures");
+      }
+
       router.refresh();
+
     } catch (error) {
       console.error("Erreur de connexion :", error);
-      setError("Impossible de contacter le serveur.");
+      setError(
+        error.message || "Impossible de contacter le serveur."
+      );
     } finally {
       setLoading(false);
     }
@@ -62,12 +87,10 @@ export default function LoginPage() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F4F6FA] px-4 py-8 sm:px-6">
-      {/* Décoration de fond */}
       <div className="pointer-events-none absolute -left-32 -top-32 h-80 w-80 rounded-full bg-[#D9A441]/10 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-40 -right-32 h-96 w-96 rounded-full bg-[#14233B]/10 blur-3xl" />
 
       <div className="relative w-full max-w-md">
-        {/* Identité MAAX Business */}
         <div className="mb-7 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#14233B] text-[#E5B85C] shadow-lg shadow-[#14233B]/20">
             <Store size={30} strokeWidth={1.8} />
@@ -82,7 +105,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Carte de connexion */}
         <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-[#14233B]/[0.07] sm:p-8">
           <div className="mb-7">
             <h2 className="text-2xl font-bold text-[#14233B]">
@@ -93,8 +115,13 @@ export default function LoginPage() {
             </p>
           </div>
 
+          {searchParams.get("inscription") === "success" && (
+            <p className="mb-5 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm leading-5 text-blue-700">
+              Votre compte a été créé avec succès. Connectez-vous pour demander et activer votre licence.
+            </p>
+          )}
+
           <form onSubmit={handleLogin} className="space-y-5">
-            {/* Numéro WhatsApp */}
             <div>
               <label
                 htmlFor="phone"
@@ -104,10 +131,7 @@ export default function LoginPage() {
               </label>
 
               <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-4 transition focus-within:border-[#C99A37] focus-within:bg-white focus-within:ring-4 focus-within:ring-[#C99A37]/10">
-                <Phone
-                  size={19}
-                  className="shrink-0 text-slate-400"
-                />
+                <Phone size={19} className="shrink-0 text-slate-400" />
 
                 <input
                   id="phone"
@@ -122,7 +146,6 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Mot de passe */}
             <div>
               <label
                 htmlFor="password"
@@ -132,10 +155,7 @@ export default function LoginPage() {
               </label>
 
               <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-4 transition focus-within:border-[#C99A37] focus-within:bg-white focus-within:ring-4 focus-within:ring-[#C99A37]/10">
-                <LockKeyhole
-                  size={19}
-                  className="shrink-0 text-slate-400"
-                />
+                <LockKeyhole size={19} className="shrink-0 text-slate-400" />
 
                 <input
                   id="password"
@@ -158,16 +178,11 @@ export default function LoginPage() {
                   }
                   className="shrink-0 text-slate-400 transition hover:text-[#14233B]"
                 >
-                  {showPassword ? (
-                    <EyeOff size={19} />
-                  ) : (
-                    <Eye size={19} />
-                  )}
+                  {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
                 </button>
               </div>
             </div>
 
-            {/* Erreur de connexion */}
             {error && (
               <p
                 role="alert"
@@ -177,7 +192,6 @@ export default function LoginPage() {
               </p>
             )}
 
-            {/* Bouton de connexion */}
             <button
               type="submit"
               disabled={loading}
@@ -198,7 +212,7 @@ export default function LoginPage() {
                 </>
               )}
             </button>
-            
+
             <div className="mt-6 text-center text-sm text-gray-600">
               Vous n’avez pas encore de compte ?{" "}
               <Link
@@ -208,10 +222,8 @@ export default function LoginPage() {
                 Créer un compte
               </Link>
             </div>
-
           </form>
 
-          {/* Mention de sécurité */}
           <div className="mt-6 flex items-center justify-center gap-2 border-t border-slate-100 pt-5 text-xs text-slate-400">
             <ShieldCheck size={15} className="text-[#C99A37]" />
             <span>Accès sécurisé à votre espace professionnel</span>
@@ -223,5 +235,19 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          Chargement...
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

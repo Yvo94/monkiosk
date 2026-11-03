@@ -2,6 +2,69 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+
+async function verifierLicenceLavage(proprietaireId) {
+  if (!proprietaireId) {
+    return { valide: false, erreur: false };
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error("[LICENCE LAVAGE] Configuration Supabase manquante.");
+    return { valide: false, erreur: true };
+  }
+
+  const supabaseAdmin = createClient(
+    supabaseUrl,
+    serviceRoleKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+
+  const maintenant = new Date().toISOString();
+
+  const { data: licences, error } = await supabaseAdmin
+    .from("licenses")
+    .select("id, modules, date_activation, date_expiration, statut")
+    .eq("proprietaire_id", proprietaireId)
+    .eq("statut", "active")
+    .not("date_activation", "is", null)
+    .lte("date_activation", maintenant)
+    .gt("date_expiration", maintenant)
+    .order("date_expiration", { ascending: false });
+
+  if (error) {
+    console.error("[LICENCE LAVAGE] Erreur :", error);
+    return { valide: false, erreur: true };
+  }
+
+  const valide = (licences || []).some(
+    (licence) =>
+      Array.isArray(licence.modules) &&
+      licence.modules.includes("lavage")
+  );
+
+  return { valide, erreur: false };
+}
+
+function reponseLicenceRequise() {
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Votre licence Lavage est absente, expirée ou révoquée.",
+      code: "LICENCE_REQUIRED",
+      redirect: "/activation-licence",
+    },
+    { status: 403 }
+  );
+}
 
 async function createSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -456,9 +519,32 @@ export async function GET(request) {
     const requestedId = searchParams.get("lavage_id");
 
     if (!requestedId) {
+      const stationsAutorisees = [];
+
+      for (const station of stations) {
+        const controleLicence = await verifierLicenceLavage(
+          station.owner_id
+        );
+
+        if (controleLicence.erreur) {
+          return jsonError(
+            "Impossible de vérifier la licence de cette station.",
+            500
+          );
+        }
+
+        if (controleLicence.valide) {
+          stationsAutorisees.push(station);
+        }
+      }
+
+      if (stations.length > 0 && stationsAutorisees.length === 0) {
+        return reponseLicenceRequise();
+      }
+
       return NextResponse.json({
         success: true,
-        stations,
+        stations: stationsAutorisees,
         operations: [],
       });
     }
@@ -472,6 +558,21 @@ export async function GET(request) {
         "Station introuvable, inactive ou accès non autorisé.",
         403
       );
+    }
+
+    const controleLicence = await verifierLicenceLavage(
+      station.owner_id
+    );
+
+    if (controleLicence.erreur) {
+      return jsonError(
+        "Impossible de vérifier la licence de cette station.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return reponseLicenceRequise();
     }
 
     const operations = await getOperations(
@@ -564,6 +665,21 @@ export async function POST(request) {
         "Aucune station active accessible pour cet utilisateur.",
         403
       );
+    }
+
+    const controleLicence = await verifierLicenceLavage(
+      station.owner_id
+    );
+
+    if (controleLicence.erreur) {
+      return jsonError(
+        "Impossible de vérifier la licence de cette station.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return reponseLicenceRequise();
     }
 
     
@@ -742,6 +858,21 @@ export async function DELETE(request) {
         "Station introuvable, inactive ou accès non autorisé.",
         403
       );
+    }
+
+    const controleLicence = await verifierLicenceLavage(
+      station.owner_id
+    );
+
+    if (controleLicence.erreur) {
+      return jsonError(
+        "Impossible de vérifier la licence de cette station.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return reponseLicenceRequise();
     }
 
     // L'archivage, la régularisation de caisse et la suppression

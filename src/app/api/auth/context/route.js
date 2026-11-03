@@ -21,9 +21,7 @@ export async function GET(request) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll() {
-          // Aucun renouvellement de cookie dans cette route.
-        },
+        setAll() {},
       },
     });
 
@@ -78,6 +76,12 @@ export async function GET(request) {
 
     const modules = [];
 
+    // Chaque module conserve l'identifiant de son propre propriétaire.
+    const proprietairesParModule = {
+      kiosque: null,
+      lavage: null,
+    };
+
     // =====================================================
     // KIOSQUE
     // =====================================================
@@ -85,7 +89,7 @@ export async function GET(request) {
     if (profile.kiosque_id) {
       const { data: kiosk, error: kioskError } = await admin
         .from("kiosques")
-        .select("id, nom, devise, actif")
+        .select("id, nom, devise, actif, owner_id")
         .eq("id", profile.kiosque_id)
         .eq("actif", true)
         .maybeSingle();
@@ -100,6 +104,8 @@ export async function GET(request) {
       }
 
       if (kiosk) {
+        proprietairesParModule.kiosque = kiosk.owner_id || null;
+
         modules.push({
           code: "kiosque",
           nom: "Kiosque",
@@ -117,10 +123,8 @@ export async function GET(request) {
     // =====================================================
 
     let lavage = null;
-    let proprietaireId = null;
 
     if (profile.role === "admin") {
-      // L'administrateur retrouve sa station par owner_id.
       const { data, error } = await admin
         .from("lavages")
         .select("id, nom, devise, actif, owner_id")
@@ -140,12 +144,9 @@ export async function GET(request) {
       }
 
       lavage = data;
-      proprietaireId = data?.owner_id || null;
+      proprietairesParModule.lavage = data?.owner_id || null;
 
     } else if (["gerant", "caissier"].includes(profile.role)) {
-      // Le gérant et le caissier retrouvent leur station
-      // par le lavage_id enregistré dans leur profil.
-
       if (profile.lavage_id) {
         const { data, error } = await admin
           .from("lavages")
@@ -164,20 +165,20 @@ export async function GET(request) {
         }
 
         lavage = data;
-        proprietaireId = data?.owner_id || null;
+        proprietairesParModule.lavage = data?.owner_id || null;
       }
     }
 
     // =====================================================
-    // VÉRIFICATION DE L'ABONNEMENT / MODULE PROPRIÉTAIRE
+    // ASSOCIATION DU MODULE LAVAGE
     // =====================================================
 
-    if (lavage && proprietaireId) {
+    if (lavage && proprietairesParModule.lavage) {
       const { data: association, error: associationError } =
         await admin
           .from("proprietaire_modules")
           .select("id, actif, modules!inner(code, actif)")
-          .eq("proprietaire_id", proprietaireId)
+          .eq("proprietaire_id", proprietairesParModule.lavage)
           .eq("actif", true)
           .eq("modules.code", "lavage")
           .eq("modules.actif", true)
@@ -209,6 +210,98 @@ export async function GET(request) {
     }
 
     // =====================================================
+    // VÉRIFICATION DES LICENCES PAR MODULE
+    // =====================================================
+
+    const maintenant = new Date().toISOString();
+
+    const licencesParProprietaire = {};
+    const licencesValides = [];
+
+    // Récupérer les propriétaires réellement concernés.
+    const proprietairesIds = [
+      ...new Set(
+        Object.values(proprietairesParModule).filter(Boolean)
+      ),
+    ];
+
+    // Vérifier les licences de chaque propriétaire.
+    for (const proprietaireId of proprietairesIds) {
+      const { data: licences, error: licenceError } = await admin
+        .from("licenses")
+        .select(
+          "id, modules, date_activation, date_expiration, statut"
+        )
+        .eq("proprietaire_id", proprietaireId)
+        .eq("statut", "active")
+        .not("date_activation", "is", null)
+        .lte("date_activation", maintenant)
+        .gt("date_expiration", maintenant)
+        .order("date_expiration", { ascending: false });
+
+      if (licenceError) {
+        console.error(
+          "Vérification licence :",
+          licenceError.message
+        );
+
+        return NextResponse.json(
+          { error: "Impossible de vérifier votre licence." },
+          { status: 500 }
+        );
+      }
+
+      licencesParProprietaire[proprietaireId] = licences || [];
+
+      licencesValides.push(...(licences || []));
+    }
+
+    // =====================================================
+    // MODULES AUTORISÉS PAR LA LICENCE
+    // =====================================================
+
+    const modulesAutorises = modules.filter((module) => {
+      const proprietaireId =
+        proprietairesParModule[module.code];
+
+      if (!proprietaireId) {
+        return false;
+      }
+
+      const licences =
+        licencesParProprietaire[proprietaireId] || [];
+
+      return licences.some(
+        (licence) =>
+          Array.isArray(licence.modules) &&
+          licence.modules.includes(module.code)
+      );
+    });
+
+    // =====================================================
+    // INFORMATIONS GÉNÉRALES SUR LES LICENCES
+    // =====================================================
+
+    const modulesLicence = [
+      ...new Set(
+        licencesValides.flatMap((licence) =>
+          Array.isArray(licence.modules)
+            ? licence.modules
+            : []
+        )
+      ),
+    ];
+
+    const licence = {
+      active: licencesValides.length > 0,
+      modules: modulesLicence,
+      dateActivation:
+        licencesValides[0]?.date_activation || null,
+      dateExpiration:
+        licencesValides[0]?.date_expiration || null,
+    };
+
+    // =====================================================
     // RÉPONSE
     // =====================================================
 
@@ -218,7 +311,15 @@ export async function GET(request) {
         nom: profile.nom,
         role: profile.role,
       },
+
+      // Tous les modules associés au compte.
       modules,
+
+      // Modules couverts par une licence valide.
+      modulesAutorises,
+
+      // État général des licences.
+      licence,
     });
 
   } catch (error) {

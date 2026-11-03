@@ -40,6 +40,37 @@ function jsonError(message, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
+async function verifierLicenceLavage(admin, proprietaireId) {
+  if (!proprietaireId) {
+    return { valide: false, erreur: false };
+  }
+
+  const maintenant = new Date().toISOString();
+
+  const { data: licences, error } = await admin
+    .from("licenses")
+    .select("id, modules, date_activation, date_expiration, statut")
+    .eq("proprietaire_id", proprietaireId)
+    .eq("statut", "active")
+    .not("date_activation", "is", null)
+    .lte("date_activation", maintenant)
+    .gt("date_expiration", maintenant)
+    .order("date_expiration", { ascending: false });
+
+  if (error) {
+    console.error("[LICENCE LAVAGE SETTINGS] Erreur :", error);
+    return { valide: false, erreur: true };
+  }
+
+  const valide = (licences || []).some(
+    (licence) =>
+      Array.isArray(licence.modules) &&
+      licence.modules.includes("lavage")
+  );
+
+  return { valide, erreur: false };
+}
+
 async function getClients() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -132,15 +163,44 @@ async function requireAdmin() {
   }
 
   if (!lavage) {
-    return {
-      error: jsonError(
-        "Aucune station active n'est associée à cet administrateur.",
-        403
-      ),
-    };
-  }
+  return {
+    error: jsonError(
+      "Aucune station active n'est associée à cet administrateur.",
+      403
+    ),
+  };
+}
 
-  return { admin, profile, lavage };
+// Vérification de la licence Lavage du propriétaire.
+const verificationLicence = await verifierLicenceLavage(
+  admin,
+  lavage.owner_id
+);
+
+if (verificationLicence.erreur) {
+  return {
+    error: jsonError(
+      "Impossible de vérifier la licence Lavage.",
+      500
+    ),
+  };
+}
+
+if (!verificationLicence.valide) {
+  return {
+    error: NextResponse.json(
+      {
+        success: false,
+        error: "Votre licence Lavage est absente, expirée ou révoquée.",
+        code: "LICENCE_REQUIRED",
+        redirect: "/activation-licence",
+      },
+      { status: 403 }
+    ),
+  };
+}
+
+return { admin, profile, lavage };
 }
 
 /**

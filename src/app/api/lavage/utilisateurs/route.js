@@ -28,6 +28,52 @@ function jsonError(message, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
+async function verifierLicenceLavage(proprietaireId) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    console.error(
+      "[LICENCE LAVAGE UTILISATEURS] Configuration Supabase manquante."
+    );
+
+    return { valide: false, erreur: true };
+  }
+
+  const supabaseAdmin = createClient(url, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  const maintenant = new Date().toISOString();
+
+  const { data: licences, error } = await supabaseAdmin
+    .from("licenses")
+    .select("id, modules, date_activation, date_expiration, statut")
+    .eq("proprietaire_id", proprietaireId)
+    .eq("statut", "active")
+    .not("date_activation", "is", null)
+    .lte("date_activation", maintenant)
+    .gt("date_expiration", maintenant)
+    .order("date_expiration", { ascending: false });
+
+  if (error) {
+    console.error("[LICENCE LAVAGE UTILISATEURS] Erreur :", error);
+
+    return { valide: false, erreur: true };
+  }
+
+  const valide = (licences || []).some(
+    (licence) =>
+      Array.isArray(licence.modules) &&
+      licence.modules.includes("lavage")
+  );
+
+  return { valide, erreur: false };
+}
+
 async function getClients() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -134,6 +180,38 @@ async function requireAdmin() {
       error: jsonError(
         "Le compte administrateur n'est pas correctement associé à sa station.",
         403
+      ),
+    };
+  }
+
+  // Vérification de la licence Lavage du propriétaire.
+  const verificationLicence = await verifierLicenceLavage(
+    lavage.owner_id
+  );
+
+  if (verificationLicence.erreur) {
+    return {
+      error: NextResponse.json(
+        {
+          success: false,
+          error: "Impossible de vérifier la licence Lavage.",
+          code: "LICENSE_CHECK_ERROR",
+        },
+        { status: 500 }
+      ),
+    };
+  }
+
+  if (!verificationLicence.valide) {
+    return {
+      error: NextResponse.json(
+        {
+          success: false,
+          error: "Votre licence Lavage est absente, expirée ou révoquée.",
+          code: "LICENCE_REQUIRED",
+          redirect: "/activation-licence",
+        },
+        { status: 403 }
       ),
     };
   }

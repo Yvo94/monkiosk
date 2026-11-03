@@ -1,9 +1,12 @@
+import LicenseGuard from "@/components/auth/LicenseGuard";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
 export default function Layout({ children }) {
   return (
-    <DashboardLayout>
-      {children}
-    </DashboardLayout>
+    <LicenseGuard>
+      <DashboardLayout>
+        {children}
+      </DashboardLayout>
+    </LicenseGuard>
   );
 }

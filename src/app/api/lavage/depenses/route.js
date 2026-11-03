@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 
 async function createSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -49,6 +50,53 @@ async function getAuthenticatedUser(supabase) {
 
   return user;
 }
+
+
+async function verifierLicenceLavage(userId) {
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+
+  const maintenant = new Date().toISOString();
+
+  const { data: licences, error } = await supabaseAdmin
+    .from("licenses")
+    .select("id, modules, date_activation, date_expiration, statut")
+    .eq("proprietaire_id", userId)
+    .eq("statut", "active")
+    .not("date_activation", "is", null)
+    .lte("date_activation", maintenant)
+    .gt("date_expiration", maintenant)
+    .order("date_expiration", { ascending: false });
+
+  if (error) {
+    console.error("[Vérification licence Lavage]", error);
+
+    return {
+      valide: false,
+      erreur: true,
+    };
+  }
+
+  const valide = (licences || []).some(
+    (licence) =>
+      Array.isArray(licence.modules) &&
+      licence.modules.includes("lavage")
+  );
+
+  return {
+    valide,
+    erreur: false,
+  };
+}
+
 
 async function getOwnedStations(supabase, userId) {
   const { data, error } = await supabase
@@ -198,11 +246,30 @@ function validateDepense(body) {
 export async function GET(request) {
   try {
     const supabase = await createSupabaseServerClient();
+    
     const user = await getAuthenticatedUser(supabase);
 
     if (!user) {
       return jsonError("Session expirée.", 401);
     }
+
+    const controleLicence = await verifierLicenceLavage(user.id);
+
+    if (controleLicence.erreur) {
+      return jsonError(
+        "Impossible de vérifier votre licence.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return jsonError(
+        "Votre licence Lavage est absente, expirée ou révoquée. Veuillez activer une licence valide.",
+        403,
+        { code: "LICENCE_REQUIRED", redirect: "/activation-licence" }
+      );
+    }
+
 
     const stations = await getOwnedStations(supabase, user.id);
     const { searchParams } = new URL(request.url);
@@ -256,11 +323,30 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const supabase = await createSupabaseServerClient();
+    
     const user = await getAuthenticatedUser(supabase);
 
     if (!user) {
       return jsonError("Session expirée.", 401);
     }
+
+    const controleLicence = await verifierLicenceLavage(user.id);
+
+    if (controleLicence.erreur) {
+      return jsonError(
+        "Impossible de vérifier votre licence.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return jsonError(
+        "Votre licence Lavage est absente, expirée ou révoquée. Veuillez activer une licence valide.",
+        403,
+        { code: "LICENCE_REQUIRED", redirect: "/activation-licence" }
+      );
+    }
+
 
     let body;
 

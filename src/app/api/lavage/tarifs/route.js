@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 
 async function getSupabase() {
   const cookieStore = await cookies();
@@ -29,6 +30,62 @@ async function getSupabase() {
 
 function responseError(message, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+async function verifierLicenceLavage(proprietaireId) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    console.error("[LICENCE LAVAGE TARIFS] Configuration Supabase manquante.");
+
+    return { valide: false, erreur: true };
+  }
+
+  const supabaseAdmin = createClient(url, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  const maintenant = new Date().toISOString();
+
+  const { data: licences, error } = await supabaseAdmin
+    .from("licenses")
+    .select("id, modules, date_activation, date_expiration, statut")
+    .eq("proprietaire_id", proprietaireId)
+    .eq("statut", "active")
+    .not("date_activation", "is", null)
+    .lte("date_activation", maintenant)
+    .gt("date_expiration", maintenant)
+    .order("date_expiration", { ascending: false });
+
+  if (error) {
+    console.error("[LICENCE LAVAGE TARIFS] Erreur :", error);
+
+    return { valide: false, erreur: true };
+  }
+
+  const valide = (licences || []).some(
+    (licence) =>
+      Array.isArray(licence.modules) &&
+      licence.modules.includes("lavage")
+  );
+
+  return { valide, erreur: false };
+}
+
+function responseLicenceRequired() {
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Votre licence Lavage est absente, expirée ou révoquée.",
+      code: "LICENCE_REQUIRED",
+      redirect: "/activation-licence",
+    },
+    { status: 403 }
+  );
 }
 
 async function getUserAndStation(supabase, request) {
@@ -68,15 +125,33 @@ async function getUserAndStation(supabase, request) {
   }
 
   if (!lavageId && stations.length > 1) {
-    return {
-      error: responseError(
-        "Plusieurs stations sont disponibles. Précise le lavage_id.",
-        409
-      ),
-    };
-  }
+  return {
+    error: responseError(
+      "Plusieurs stations sont disponibles. Précise le lavage_id.",
+      409
+    ),
+  };
+}
 
-  return { user, station: stations[0] };
+// Vérification de la licence Lavage du propriétaire.
+const verificationLicence = await verifierLicenceLavage(user.id);
+
+if (verificationLicence.erreur) {
+  return {
+    error: responseError(
+      "Impossible de vérifier la licence Lavage.",
+      500
+    ),
+  };
+}
+
+if (!verificationLicence.valide) {
+  return {
+    error: responseLicenceRequired(),
+  };
+}
+
+return { user, station: stations[0] };
 }
 
 async function validateReferences(

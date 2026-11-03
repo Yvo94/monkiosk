@@ -28,6 +28,48 @@ function jsonError(message, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
+async function verifierLicenceKiosque(proprietaireId) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    console.error("[LICENCE KIOSQUE] Configuration Supabase manquante.");
+    return { valide: false, erreur: true };
+  }
+
+  const supabaseAdmin = createClient(url, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  const maintenant = new Date().toISOString();
+
+  const { data: licences, error } = await supabaseAdmin
+    .from("licenses")
+    .select("id, modules, date_activation, date_expiration, statut")
+    .eq("proprietaire_id", proprietaireId)
+    .eq("statut", "active")
+    .not("date_activation", "is", null)
+    .lte("date_activation", maintenant)
+    .gt("date_expiration", maintenant)
+    .order("date_expiration", { ascending: false });
+
+  if (error) {
+    console.error("[LICENCE KIOSQUE] Erreur :", error);
+    return { valide: false, erreur: true };
+  }
+
+  const valide = (licences || []).some(
+    (licence) =>
+      Array.isArray(licence.modules) &&
+      licence.modules.includes("kiosque")
+  );
+
+  return { valide, erreur: false };
+}
+
 async function getClients() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -128,11 +170,7 @@ async function requireAdmin() {
     };
   }
 
-  if (
-    !profile.kiosque_id ||
-    profile.kiosque_id !== kiosque.id ||
-    kiosque.owner_id !== user.id
-    ) {
+  if (!profile.kiosque_id || profile.kiosque_id !== kiosque.id || kiosque.owner_id !== user.id) {
     console.error("Incohérence du rattachement administrateur/kiosque.", {
         userId: user.id,
         profileKiosqueId: profile.kiosque_id,
@@ -153,6 +191,38 @@ async function requireAdmin() {
     currentUser: profile,
     kiosque,
   };
+
+  // Vérification de la licence Kiosque du propriétaire.
+  const verificationLicence = await verifierLicenceKiosque(
+    kiosque.owner_id
+  );
+
+  if (verificationLicence.erreur) {
+    return {
+      error: NextResponse.json(
+        {
+          success: false,
+          error: "Impossible de vérifier la licence Kiosque.",
+          code: "LICENSE_CHECK_ERROR",
+        },
+        { status: 500 }
+      ),
+    };
+  }
+
+  if (!verificationLicence.valide) {
+    return {
+      error: NextResponse.json(
+        {
+          success: false,
+          error: "Votre licence Kiosque est absente, expirée ou révoquée.",
+          code: "LICENCE_REQUIRED",
+          redirect: "/activation-licence",
+        },
+        { status: 403 }
+      ),
+    };
+  }
 }
 
 // GET : liste uniquement les utilisateurs du kiosque connecté.
@@ -199,7 +269,7 @@ export async function GET(request) {
       // Lire le kiosque par son identifiant, et non par owner_id.
       const { data: kiosk, error: kioskError } = await admin
         .from("kiosques")
-        .select("id, nom, devise, actif")
+        .select("id, nom, devise, actif, owner_id")
         .eq("id", profile.kiosque_id)
         .eq("actif", true)
         .maybeSingle();
@@ -213,6 +283,35 @@ export async function GET(request) {
         return jsonError(
           "Le kiosque associé à cet utilisateur n'existe pas ou est inactif.",
           404
+        );
+      }
+
+      // Vérifier la licence du propriétaire du kiosque,
+      // même lorsque l'utilisateur connecté est un gérant ou caissier.
+      const verificationLicence = await verifierLicenceKiosque(
+        kiosk.owner_id
+      );
+
+      if (verificationLicence.erreur) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Impossible de vérifier la licence Kiosque.",
+            code: "LICENSE_CHECK_ERROR",
+          },
+          { status: 500 }
+        );
+      }
+
+      if (!verificationLicence.valide) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Votre licence Kiosque est absente, expirée ou révoquée.",
+            code: "LICENCE_REQUIRED",
+            redirect: "/activation-licence",
+          },
+          { status: 403 }
         );
       }
 

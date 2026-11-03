@@ -531,12 +531,19 @@ export default function DashboardPage() {
       const context = await contextResponse.json();
       const modules = context.modules || [];
 
-      // Vérifier l'accès au module Kiosque
+      // Vérifier que le compte possède le module Kiosque
+      // dans ses modules effectivement autorisés.
       const kiosqueModule = modules.find(
         (module) => module.code === "kiosque"
       );
 
-      if (!kiosqueModule?.etablissement?.id) {
+      if (!kiosqueModule) {
+        window.location.replace("/activation-licence");
+        return;
+      }
+
+      // Vérifier que le kiosque est bien associé au compte.
+      if (!kiosqueModule.etablissement?.id) {
         window.location.replace("/structures/kiosque");
         return;
       }

@@ -2,6 +2,61 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+
+// =====================================================
+// VÉRIFICATION DE LA LICENCE LAVAGE
+// =====================================================
+
+async function verifierLicenceLavage(proprietaireId) {
+  if (!proprietaireId) {
+    return { valide: false, erreur: false };
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error("[LICENCE LAVAGE] Configuration Supabase manquante.");
+    return { valide: false, erreur: true };
+  }
+
+  const supabaseAdmin = createClient(
+    supabaseUrl,
+    serviceRoleKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+
+  const maintenant = new Date().toISOString();
+
+  const { data: licences, error } = await supabaseAdmin
+    .from("licenses")
+    .select("id, modules, date_activation, date_expiration, statut")
+    .eq("proprietaire_id", proprietaireId)
+    .eq("statut", "active")
+    .not("date_activation", "is", null)
+    .lte("date_activation", maintenant)
+    .gt("date_expiration", maintenant)
+    .order("date_expiration", { ascending: false });
+
+  if (error) {
+    console.error("[LICENCE LAVAGE] Erreur :", error);
+    return { valide: false, erreur: true };
+  }
+
+  const valide = (licences || []).some(
+    (licence) =>
+      Array.isArray(licence.modules) &&
+      licence.modules.includes("lavage")
+  );
+
+  return { valide, erreur: false };
+}
 
 function dateAbidjan(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -263,7 +318,34 @@ export async function GET(request) {
     }
 
     const station = stations[0];
-    
+
+    // =====================================================
+    // CONTRÔLE DE LA LICENCE DU PROPRIÉTAIRE
+    // =====================================================
+
+    const controleLicence = await verifierLicenceLavage(
+      station.owner_id
+    );
+
+    if (controleLicence.erreur) {
+      return reponseErreur(
+        "Impossible de vérifier la licence de cette station.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return NextResponse.json(
+        {
+          error:
+            "La licence Lavage de cette station est absente, expirée ou révoquée.",
+          code: "LICENCE_REQUIRED",
+          redirect: "/activation-licence",
+        },
+        { status: 403 }
+      );
+    }
+
     const devise = station.devise || "FCFA";
 
     // Graphique : les 7 jours se terminant à la date de fin sélectionnée.

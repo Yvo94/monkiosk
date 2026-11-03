@@ -1,7 +1,62 @@
 
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+
+// =====================================================
+// VÉRIFICATION DE LA LICENCE LAVAGE
+// =====================================================
+
+async function verifierLicenceLavage(userId) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error("[LICENCE LAVAGE] Configuration Supabase manquante.");
+    return { valide: false, erreur: true };
+  }
+
+  const supabaseAdmin = createClient(
+    supabaseUrl,
+    serviceRoleKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+
+  const maintenant = new Date().toISOString();
+
+  const { data: licences, error } = await supabaseAdmin
+    .from("licenses")
+    .select("id, modules, date_activation, date_expiration, statut")
+    .eq("proprietaire_id", userId)
+    .eq("statut", "active")
+    .not("date_activation", "is", null)
+    .lte("date_activation", maintenant)
+    .gt("date_expiration", maintenant)
+    .order("date_expiration", { ascending: false });
+
+  if (error) {
+    console.error("[LICENCE LAVAGE] Erreur de lecture :", error);
+    return { valide: false, erreur: true };
+  }
+
+  const valide = (licences || []).some(
+    (licence) =>
+      Array.isArray(licence.modules) &&
+      licence.modules.includes("lavage")
+  );
+
+  return { valide, erreur: false };
+}
+
+// =====================================================
+// CONTEXTE UTILISATEUR ET STATION
+// =====================================================
 
 async function getContext(request) {
   const cookieStore = await cookies();
@@ -46,6 +101,35 @@ async function getContext(request) {
     };
   }
 
+  // CONTRÔLE DE LICENCE AVANT TOUT ACCÈS AUX DONNÉES
+
+  const controleLicence = await verifierLicenceLavage(user.id);
+
+  if (controleLicence.erreur) {
+    return {
+      error: NextResponse.json(
+        { error: "Impossible de vérifier votre licence." },
+        { status: 500 }
+      ),
+    };
+  }
+
+  if (!controleLicence.valide) {
+    return {
+      error: NextResponse.json(
+        {
+          error:
+            "Votre licence Lavage est absente, expirée ou révoquée. Veuillez activer une licence valide.",
+          code: "LICENCE_REQUIRED",
+          redirect: "/activation-licence",
+        },
+        { status: 403 }
+      ),
+    };
+  }
+
+  // RÉCUPÉRATION DES STATIONS DU PROPRIÉTAIRE
+
   const { data: stations, error: stationError } = await supabase
     .from("lavages")
     .select("id, nom, devise")
@@ -54,6 +138,7 @@ async function getContext(request) {
 
   if (stationError) {
     console.error("[LAVEURS] Lecture stations :", stationError);
+
     return {
       error: NextResponse.json(
         { error: "Impossible de récupérer la station de lavage." },
@@ -104,6 +189,10 @@ async function getContext(request) {
   return { supabase, user, station };
 }
 
+// =====================================================
+// OUTILS
+// =====================================================
+
 function jsonError(message, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -123,6 +212,10 @@ function validatePayload(body) {
 
   return { nom, telephone: telephone || null };
 }
+
+// =====================================================
+// GET : CONSULTER LES LAVEURS
+// =====================================================
 
 export async function GET(request) {
   try {
@@ -151,6 +244,10 @@ export async function GET(request) {
     return jsonError("Erreur interne lors du chargement des laveurs.", 500);
   }
 }
+
+// =====================================================
+// POST : AJOUTER UN LAVEUR
+// =====================================================
 
 export async function POST(request) {
   try {
@@ -192,6 +289,10 @@ export async function POST(request) {
     return jsonError("Erreur interne lors de l'ajout du laveur.", 500);
   }
 }
+
+// =====================================================
+// PATCH : MODIFIER UN LAVEUR
+// =====================================================
 
 export async function PATCH(request) {
   try {

@@ -213,7 +213,7 @@ export default function RegisterPage() {
         return;
       }
 
-      router.replace("/structures");
+      router.replace("/activation-licence");
       router.refresh();
     } catch (err) {
       setError(

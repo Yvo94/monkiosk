@@ -2,6 +2,49 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+
+async function verifierLicenceLavage(proprietaireId) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    console.error("[LICENCE LAVAGE PRESTATIONS] Configuration Supabase manquante.");
+    return { valide: false, erreur: true };
+  }
+
+  const supabaseAdmin = createClient(url, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  const maintenant = new Date().toISOString();
+
+  const { data: licences, error } = await supabaseAdmin
+    .from("licenses")
+    .select("id, modules, date_activation, date_expiration, statut")
+    .eq("proprietaire_id", proprietaireId)
+    .eq("statut", "active")
+    .not("date_activation", "is", null)
+    .lte("date_activation", maintenant)
+    .gt("date_expiration", maintenant)
+    .order("date_expiration", { ascending: false });
+
+  if (error) {
+    console.error("[LICENCE LAVAGE PRESTATIONS] Erreur :", error);
+    return { valide: false, erreur: true };
+  }
+
+  const valide = (licences || []).some(
+    (licence) =>
+      Array.isArray(licence.modules) &&
+      licence.modules.includes("lavage")
+  );
+
+  return { valide, erreur: false };
+}
 
 async function getContext(request) {
   const cookieStore = await cookies();
@@ -59,9 +102,30 @@ async function getContext(request) {
   }
 
   if (!requestedId && stations.length > 1) {
+  return {
+    error: "Plusieurs stations actives : sélectionnez une station.",
+    status: 409,
+  };
+}
+
+  // Vérification de la licence Lavage du propriétaire.
+  const verificationLicence = await verifierLicenceLavage(
+    authData.user.id
+  );
+
+  if (verificationLicence.erreur) {
     return {
-      error: "Plusieurs stations actives : sélectionnez une station.",
-      status: 409,
+      error: "Impossible de vérifier la licence Lavage.",
+      status: 500,
+    };
+  }
+
+  if (!verificationLicence.valide) {
+    return {
+      error: "Votre licence Lavage est absente, expirée ou révoquée.",
+      status: 403,
+      code: "LICENCE_REQUIRED",
+      redirect: "/activation-licence",
     };
   }
 
@@ -73,7 +137,12 @@ export async function GET(request) {
     const context = await getContext(request);
     if (context.error) {
       return NextResponse.json(
-        { error: context.error },
+        {
+          success: false,
+          error: context.error,
+          ...(context.code && { code: context.code }),
+          ...(context.redirect && { redirect: context.redirect }),
+        },
         { status: context.status }
       );
     }
@@ -104,7 +173,12 @@ export async function POST(request) {
     const context = await getContext(request);
     if (context.error) {
       return NextResponse.json(
-        { error: context.error },
+        {
+          success: false,
+          error: context.error,
+          ...(context.code && { code: context.code }),
+          ...(context.redirect && { redirect: context.redirect }),
+        },
         { status: context.status }
       );
     }
@@ -157,7 +231,12 @@ export async function PATCH(request) {
     const context = await getContext(request);
     if (context.error) {
       return NextResponse.json(
-        { error: context.error },
+        {
+          success: false,
+          error: context.error,
+          ...(context.code && { code: context.code }),
+          ...(context.redirect && { redirect: context.redirect }),
+        },
         { status: context.status }
       );
     }

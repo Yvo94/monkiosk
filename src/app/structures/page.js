@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -63,7 +64,22 @@ export default function StructuresPage() {
         );
       }
 
-      const authorizedModules = (result.modules || []).filter(
+      // =================================================
+      // VÉRIFICATION DE LA LICENCE
+      // =================================================
+
+      if (!result.licence?.active) {
+        router.replace("/activation-licence");
+        return;
+      }
+
+      // =================================================
+      // RÉCUPÉRATION DES MODULES AUTORISÉS
+      // =================================================
+
+      const authorizedModules = (
+        result.modulesAutorises || []
+      ).filter(
         (module) =>
           MODULES[module.code] &&
           module.etablissement
@@ -74,11 +90,13 @@ export default function StructuresPage() {
 
       if (authorizedModules.length === 0) {
         setError(
-          "Aucune structure active n'est associée à votre compte. Contactez votre administrateur."
+          "Votre licence est active, mais aucun établissement ne correspond aux modules autorisés. Contactez MAAX Technologies."
         );
       }
+
     } catch (err) {
       console.error("Erreur de chargement des structures :", err);
+
       setError(
         err.message || "Impossible de contacter le serveur."
       );
@@ -158,7 +176,7 @@ export default function StructuresPage() {
           <div className="flex min-h-56 items-center justify-center rounded-3xl border border-slate-200 bg-white">
             <div className="flex items-center gap-3 text-sm font-medium text-slate-500">
               <RefreshCw size={20} className="animate-spin" />
-              Chargement de vos structures...
+              Vérification de votre licence et chargement des structures...
             </div>
           </div>
         ) : error ? (
@@ -169,6 +187,7 @@ export default function StructuresPage() {
             <p className="font-semibold text-red-800">
               {error}
             </p>
+
             <button
               type="button"
               onClick={loadStructures}
@@ -222,8 +241,12 @@ export default function StructuresPage() {
 
                     <span className="inline-flex items-center gap-2 rounded-xl bg-[#14233B] px-4 py-3 text-sm font-bold text-white transition group-hover:bg-[#203858]">
                       {isOpening ? "Ouverture..." : "Accéder"}
+
                       {isOpening ? (
-                        <RefreshCw size={16} className="animate-spin" />
+                        <RefreshCw
+                          size={16}
+                          className="animate-spin"
+                        />
                       ) : (
                         <ArrowRight
                           size={17}

@@ -34,6 +34,10 @@ export async function GET(request) {
       },
     });
 
+    // =====================================================
+    // AUTHENTIFICATION
+    // =====================================================
+
     const {
       data: { user },
       error: authError,
@@ -46,9 +50,13 @@ export async function GET(request) {
       );
     }
 
+    // =====================================================
+    // PROFIL UTILISATEUR
+    // =====================================================
+
     const { data: profile, error: profileError } = await admin
       .from("users")
-      .select("id, nom, role, actif, kiosque_id")
+      .select("id, nom, role, actif, kiosque_id, lavage_id")
       .eq("id", user.id)
       .maybeSingle();
 
@@ -70,16 +78,16 @@ export async function GET(request) {
 
     const modules = [];
 
-    // -----------------------------------------------------
+    // =====================================================
     // KIOSQUE
-    // Compatibilité avec les comptes existants et les rôles
-    // rattachés à un kiosque.
-    // -----------------------------------------------------
+    // =====================================================
+
     if (profile.kiosque_id) {
       const { data: kiosk, error: kioskError } = await admin
         .from("kiosques")
         .select("id, nom, devise, actif")
         .eq("id", profile.kiosque_id)
+        .eq("actif", true)
         .maybeSingle();
 
       if (kioskError) {
@@ -91,7 +99,7 @@ export async function GET(request) {
         );
       }
 
-      if (kiosk?.actif) {
+      if (kiosk) {
         modules.push({
           code: "kiosque",
           nom: "Kiosque",
@@ -104,39 +112,76 @@ export async function GET(request) {
       }
     }
 
-    // -----------------------------------------------------
+    // =====================================================
     // LAVAGE
-    // Pour cette première version, le rattachement est celui
-    // du propriétaire via lavages.owner_id.
-    // -----------------------------------------------------
-    const { data: lavage, error: lavageError } = await admin
-      .from("lavages")
-      .select("id, nom, devise, actif")
-      .eq("owner_id", user.id)
-      .eq("actif", true)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+    // =====================================================
 
-    if (lavageError) {
-      console.error("Contexte lavage :", lavageError.message);
+    let lavage = null;
+    let proprietaireId = null;
 
-      return NextResponse.json(
-        { error: "Impossible de vérifier le module Lavage." },
-        { status: 500 }
-      );
+    if (profile.role === "admin") {
+      // L'administrateur retrouve sa station par owner_id.
+      const { data, error } = await admin
+        .from("lavages")
+        .select("id, nom, devise, actif, owner_id")
+        .eq("owner_id", user.id)
+        .eq("actif", true)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Contexte lavage administrateur :", error.message);
+
+        return NextResponse.json(
+          { error: "Impossible de vérifier le module Lavage." },
+          { status: 500 }
+        );
+      }
+
+      lavage = data;
+      proprietaireId = data?.owner_id || null;
+
+    } else if (["gerant", "caissier"].includes(profile.role)) {
+      // Le gérant et le caissier retrouvent leur station
+      // par le lavage_id enregistré dans leur profil.
+
+      if (profile.lavage_id) {
+        const { data, error } = await admin
+          .from("lavages")
+          .select("id, nom, devise, actif, owner_id")
+          .eq("id", profile.lavage_id)
+          .eq("actif", true)
+          .maybeSingle();
+
+        if (error) {
+          console.error("Contexte lavage utilisateur :", error.message);
+
+          return NextResponse.json(
+            { error: "Impossible de vérifier votre station de lavage." },
+            { status: 500 }
+          );
+        }
+
+        lavage = data;
+        proprietaireId = data?.owner_id || null;
+      }
     }
 
-    if (lavage) {
-      // Vérifier que le propriétaire possède bien le module.
-      const { data: association, error: associationError } = await admin
-        .from("proprietaire_modules")
-        .select("id, actif, modules!inner(code, actif)")
-        .eq("proprietaire_id", user.id)
-        .eq("actif", true)
-        .eq("modules.code", "lavage")
-        .eq("modules.actif", true)
-        .maybeSingle();
+    // =====================================================
+    // VÉRIFICATION DE L'ABONNEMENT / MODULE PROPRIÉTAIRE
+    // =====================================================
+
+    if (lavage && proprietaireId) {
+      const { data: association, error: associationError } =
+        await admin
+          .from("proprietaire_modules")
+          .select("id, actif, modules!inner(code, actif)")
+          .eq("proprietaire_id", proprietaireId)
+          .eq("actif", true)
+          .eq("modules.code", "lavage")
+          .eq("modules.actif", true)
+          .maybeSingle();
 
       if (associationError) {
         console.error(
@@ -163,6 +208,10 @@ export async function GET(request) {
       }
     }
 
+    // =====================================================
+    // RÉPONSE
+    // =====================================================
+
     return NextResponse.json({
       user: {
         id: profile.id,
@@ -171,6 +220,7 @@ export async function GET(request) {
       },
       modules,
     });
+
   } catch (error) {
     console.error("GET /api/auth/context :", error);
 
