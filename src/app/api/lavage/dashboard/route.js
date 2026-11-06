@@ -107,6 +107,25 @@ function estPayee(statut) {
   return statut === "payee";
 }
 
+function estMouvementEntrant(typeMouvement) {
+  const type = String(typeMouvement || "")
+    .trim()
+    .toLocaleLowerCase("fr")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replaceAll(" ", "_");
+
+  return [
+    "entree",
+    "encaissement",
+    "versement",
+    "approvisionnement",
+    "depot",
+    "transfert_entrant",
+    "transfert_recu",
+  ].some((motif) => type.includes(motif));
+}
+
 function reponseErreur(message, status, details = undefined) {
   return NextResponse.json(
     {
@@ -357,6 +376,7 @@ export async function GET(request) {
       encaissementsPeriodeResult,
       recentServicesResult,
       caisseResult,
+      mouvementsCaissesResult,
       prestationsResult,
       laveursResult,
       depensesPeriodeResult,
@@ -423,9 +443,17 @@ export async function GET(request) {
       // Les soldes des caisses sont des soldes actuels.
       supabase
         .from("lavage_caisses")
-        .select("id, nom, code, solde_actuel")
+        .select("id, nom, code, solde_actuel, afficher_sur_accueil")
         .eq("lavage_id", station.id)
         .eq("actif", true),
+
+      // Mouvements de caisse enregistrés pendant la période sélectionnée.
+      supabase
+        .from("lavage_mouvements_caisse")
+        .select("id, caisse_id, type_mouvement, montant, date_mouvement")
+        .eq("lavage_id", station.id)
+        .gte("date_mouvement", borneDebut)
+        .lt("date_mouvement", borneFin),
 
       supabase
         .from("lavage_prestations")
@@ -463,6 +491,7 @@ export async function GET(request) {
       ["encaissements de la période", encaissementsPeriodeResult],
       ["dernières prestations", recentServicesResult],
       ["caisses", caisseResult],
+      ["mouvements des caisses", mouvementsCaissesResult],
       ["catalogue des prestations", prestationsResult],
       ["laveurs", laveursResult],
       ["dépenses de la période", depensesPeriodeResult],
@@ -497,6 +526,31 @@ export async function GET(request) {
     const caisses = caisseResult.data || [];
     const depenses = depensesPeriodeResult.data || [];
     const servicesEvolution = servicesEvolutionResult.data || [];
+    const mouvementsCaisses = mouvementsCaissesResult.data || [];
+
+    // Une carte est créée uniquement pour les caisses configurées par l'admin.
+    const indicateursCaisses = caisses
+      .filter((caisse) => caisse.afficher_sur_accueil === true)
+      .map((caisse) => {
+        const mouvementsEntrants = mouvementsCaisses.filter(
+          (mouvement) =>
+            mouvement.caisse_id === caisse.id &&
+            estMouvementEntrant(mouvement.type_mouvement)
+        );
+
+        const totalEntrees = mouvementsEntrants.reduce(
+          (total, mouvement) => total + montant(mouvement.montant),
+          0
+        );
+
+        return {
+          caisse_id: caisse.id,
+          nom: caisse.nom,
+          code: caisse.code,
+          total_entrees: totalEntrees,
+          nombre_entrees: mouvementsEntrants.length,
+        };
+      });
 
     const depensesPayees = depenses.filter(
       (depense) => depense.statut === "payee"
@@ -638,6 +692,8 @@ export async function GET(request) {
         prestationsConfigurees: prestationsResult.count || 0,
         laveursActifs: laveursResult.count || 0,
       },
+
+      indicateursCaisses,
 
       commissionsParLaveur: Array.from(commissionsParLaveur.values()),
       evolution,

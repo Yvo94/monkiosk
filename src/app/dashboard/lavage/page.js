@@ -627,6 +627,7 @@ export default function LavageDashboardPage() {
     statistiques = {},
     evolution = [],
     derniersServices = [],
+    indicateursCaisses = [],
     devise = "FCFA",
   } = donnees;
 
@@ -938,11 +939,25 @@ export default function LavageDashboardPage() {
             icon={Wallet}
             couleurValeur="#166534"
           />
+          {indicateursCaisses.map((caisse) => (
+            <Indicateur
+              key={caisse.caisse_id}
+              compact
+              titre={caisse.nom}
+              valeur={montant(caisse.total_entrees, devise)}
+              detail={`${Number(caisse.nombre_entrees || 0).toLocaleString("fr-FR")} entrée(s) sur la période`}
+              icon={Wallet}
+              couleurValeur="#135b8b"
+            />
+          ))}
         </div>
       </section>
 
+      
+      
+
       {/* Graphique et état */}
-      <section className="grid min-w-0 gap-4 lg:grid-cols-3 lg:gap-5">
+      <section className="grid min-w-0 gap-4 lg:grid-cols-2 lg:gap-5">
         <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:col-span-2">
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B]">
@@ -1001,6 +1016,7 @@ export default function LavageDashboardPage() {
           )}
         </div>
 
+        {/* 
         <div data-guide="etat-station" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B]">
@@ -1071,8 +1087,101 @@ export default function LavageDashboardPage() {
             <ArrowRight size={17} className="shrink-0" />
           </Link>
         </div>
+        */}
       </section>
 
+      {/* Derniers lavages */}
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
+          <div className="min-w-0">
+            <h2 className="font-bold text-[#14233B]">Derniers lavages</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
+              Les cinq derniers services enregistrés.
+            </p>
+          </div>
+
+          <div className="shrink-0 rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B]">
+            <CalendarDays size={19} />
+          </div>
+        </div>
+
+        {derniersServices.length === 0 ? (
+          <div className="px-4 py-10 text-center sm:p-8">
+            <CarFront size={30} className="mx-auto text-slate-300" />
+            <p className="mt-3 font-medium text-slate-700">
+              Aucun lavage enregistré
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
+              Les prestations apparaîtront ici après leur enregistrement.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {derniersServices.map((service) => {
+              const vehicule = service.lavage_vehicules;
+              const laveur = service.lavage_laveurs;
+              const termine = service.statut === "termine";
+
+              return (
+                <article
+                  key={service.id}
+                  className="flex min-w-0 items-start gap-3 p-4 transition hover:bg-slate-50/70 sm:items-center sm:px-5"
+                >
+                  <div className="mt-0.5 shrink-0 rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B] sm:mt-0">
+                    <CarFront size={20} />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm font-semibold text-[#14233B]">
+                      {vehicule?.immatriculation || "Véhicule"}
+                    </p>
+
+                    {(vehicule?.marque || vehicule?.modele) && (
+                      <p className="mt-0.5 break-words text-xs text-slate-600">
+                        {[vehicule?.marque, vehicule?.modele]
+                          .filter(Boolean)
+                          .join(" ")}
+                      </p>
+                    )}
+
+                    <p className="mt-1 break-words text-[11px] leading-5 text-slate-500 sm:text-xs">
+                      {dateHeure(service.date_service)}
+                      {laveur?.nom ? ` · ${laveur.nom}` : ""}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold sm:text-xs ${
+                        termine
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {termine ? "Terminé" : "Annulé"}
+                    </span>
+
+                    <span className="text-right text-xs font-bold text-[#14233B] sm:text-sm">
+                      {montant(service.montant_total, devise)}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="border-t border-slate-100 p-3 sm:px-5">
+          <Link
+            href="/dashboard/lavage/services"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-[#14233B] transition hover:bg-slate-50"
+          >
+            Voir toutes les prestations
+            <ArrowRight size={16} />
+          </Link>
+        </div>
+      </section>
+      
       {/* Prévisions du chiffre d'affaires */}
       <section data-guide="previsions" className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1224,100 +1333,7 @@ export default function LavageDashboardPage() {
         )}
       </section>
 
-
-      {/* Derniers lavages */}
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
-          <div className="min-w-0">
-            <h2 className="font-bold text-[#14233B]">Derniers lavages</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-              Les cinq derniers services enregistrés.
-            </p>
-          </div>
-
-          <div className="shrink-0 rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B]">
-            <CalendarDays size={19} />
-          </div>
-        </div>
-
-        {derniersServices.length === 0 ? (
-          <div className="px-4 py-10 text-center sm:p-8">
-            <CarFront size={30} className="mx-auto text-slate-300" />
-            <p className="mt-3 font-medium text-slate-700">
-              Aucun lavage enregistré
-            </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-              Les prestations apparaîtront ici après leur enregistrement.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {derniersServices.map((service) => {
-              const vehicule = service.lavage_vehicules;
-              const laveur = service.lavage_laveurs;
-              const termine = service.statut === "termine";
-
-              return (
-                <article
-                  key={service.id}
-                  className="flex min-w-0 items-start gap-3 p-4 transition hover:bg-slate-50/70 sm:items-center sm:px-5"
-                >
-                  <div className="mt-0.5 shrink-0 rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B] sm:mt-0">
-                    <CarFront size={20} />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm font-semibold text-[#14233B]">
-                      {vehicule?.immatriculation || "Véhicule"}
-                    </p>
-
-                    {(vehicule?.marque || vehicule?.modele) && (
-                      <p className="mt-0.5 break-words text-xs text-slate-600">
-                        {[vehicule?.marque, vehicule?.modele]
-                          .filter(Boolean)
-                          .join(" ")}
-                      </p>
-                    )}
-
-                    <p className="mt-1 break-words text-[11px] leading-5 text-slate-500 sm:text-xs">
-                      {dateHeure(service.date_service)}
-                      {laveur?.nom ? ` · ${laveur.nom}` : ""}
-                    </p>
-                  </div>
-
-                  <div className="flex shrink-0 flex-col items-end gap-2">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold sm:text-xs ${
-                        termine
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {termine ? "Terminé" : "Annulé"}
-                    </span>
-
-                    <span className="text-right text-xs font-bold text-[#14233B] sm:text-sm">
-                      {montant(service.montant_total, devise)}
-                    </span>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="border-t border-slate-100 p-3 sm:px-5">
-          <Link
-            href="/dashboard/lavage/services"
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-[#14233B] transition hover:bg-slate-50"
-          >
-            Voir toutes les prestations
-            <ArrowRight size={16} />
-          </Link>
-        </div>
-      </section>
-
-      {/* Gestion */}
+      {/* Gestion 
       <section data-guide="gestion">
         <SectionTitre
           titre="Gestion de la station"
@@ -1356,6 +1372,7 @@ export default function LavageDashboardPage() {
           })}
         </div>
       </section>
+      */}
 
       <p className="px-1 pb-2 text-[11px] leading-5 text-slate-400 sm:text-xs">
         Les indicateurs sont calculés à partir des données enregistrées.

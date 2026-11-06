@@ -169,6 +169,7 @@ export default function CaisseLavagePage() {
     nom: "",
     code: "",
     solde_initial: "0",
+    afficher_sur_accueil: false,
   });
 
   const stationSelectionnee = useMemo(
@@ -386,7 +387,7 @@ export default function CaisseLavagePage() {
           supabase
             .from("lavage_caisses")
             .select(
-              "id, lavage_id, code, nom, solde_initial, solde_actuel, actif, created_at"
+              "id, lavage_id, code, nom, solde_initial, solde_actuel, actif, afficher_sur_accueil, created_at"
             )
             .eq("lavage_id", stationId)
             .order("nom", { ascending: true }),
@@ -427,6 +428,7 @@ export default function CaisseLavagePage() {
       nom: "",
       code: "",
       solde_initial: "0",
+      afficher_sur_accueil: false,
     });
     setErreurFormulaire("");
     setMessageSucces("");
@@ -439,6 +441,7 @@ export default function CaisseLavagePage() {
       nom: caisse.nom || "",
       code: caisse.code || "",
       solde_initial: String(caisse.solde_initial ?? 0),
+      afficher_sur_accueil: caisse.afficher_sur_accueil === true,
     });
     setErreurFormulaire("");
     setMessageSucces("");
@@ -539,6 +542,7 @@ export default function CaisseLavagePage() {
           .update({
             nom,
             code,
+            afficher_sur_accueil: formCaisse.afficher_sur_accueil,
           })
           .eq("id", caisseEnEdition.id)
           .eq("lavage_id", lavageId);
@@ -556,6 +560,7 @@ export default function CaisseLavagePage() {
             solde_initial: soldeInitial,
             solde_actuel: soldeInitial,
             actif: true,
+            afficher_sur_accueil: formCaisse.afficher_sur_accueil,
           });
 
         if (erreurInsert) throw erreurInsert;
@@ -1588,6 +1593,29 @@ export default function CaisseLavagePage() {
                 <p className="mt-1 text-xs text-slate-500">
                   Le code doit être unique au sein de cette station.
                 </p>
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#D8BD83]/50 bg-[#D8BD83]/10 p-4">
+                  <input
+                    type="checkbox"
+                    checked={formCaisse.afficher_sur_accueil}
+                    onChange={(event) =>
+                      setFormCaisse((ancien) => ({
+                        ...ancien,
+                        afficher_sur_accueil: event.target.checked,
+                      }))
+                    }
+                    className="mt-1 h-4 w-4 accent-[#14233B]"
+                  />
+
+                  <span>
+                    <span className="block text-sm font-semibold text-[#14233B]">
+                      Afficher l'historique sur la page d'accueil
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">
+                      Affiche une carte présentant le cumul des entrées de cette caisse
+                      selon la période sélectionnée sur la vue d'ensemble.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {!caisseEnEdition && (

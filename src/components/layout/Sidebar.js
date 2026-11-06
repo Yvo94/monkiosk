@@ -103,7 +103,7 @@ const lavageMenuItems = [
     href: "/dashboard/lavage/previsions",
     icon: ChartNoAxesCombined,
   },
-  {
+  /*{
     label: "Synthèse financière",
     href: "/dashboard/lavage/synthese-financiere",
     icon: CircleDollarSign,
@@ -112,7 +112,7 @@ const lavageMenuItems = [
     label: "Statistiques",
     href: "/dashboard/lavage/statistiques",
     icon: BarChart3,
-  },
+  },*/
   {
     label: "Caisses / Coffres",
     href: "/dashboard/lavage/caisse",
