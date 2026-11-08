@@ -367,6 +367,20 @@ export async function GET(request) {
 
     const devise = station.devise || "FCFA";
 
+    // Vérifier si l'utilisateur peut gérer les caisses.
+    const { data: peutGererCaisses, error: permissionError } =
+      await supabase.rpc("lavage_a_le_droit", {
+        p_lavage_id: station.id,
+        p_action: "caisses.gerer",
+      });
+
+    if (permissionError) {
+      console.error(
+        "[LAVAGE] Vérification permission caisses :",
+        permissionError
+      );
+    }
+
     // Graphique : les 7 jours se terminant à la date de fin sélectionnée.
     const debutEvolution = decalageJour(dateFin, -6);
 
@@ -547,6 +561,7 @@ export async function GET(request) {
           caisse_id: caisse.id,
           nom: caisse.nom,
           code: caisse.code,
+          solde_actuel: montant(caisse.solde_actuel),
           total_entrees: totalEntrees,
           nombre_entrees: mouvementsEntrants.length,
         };
@@ -694,6 +709,18 @@ export async function GET(request) {
       },
 
       indicateursCaisses,
+
+      // Toutes les caisses actives peuvent être utilisées
+      // comme destinations de transfert.
+      caissesActives: caisses.map((caisse) => ({
+        caisse_id: caisse.id,
+        nom: caisse.nom,
+        code: caisse.code,
+        solde_actuel: montant(caisse.solde_actuel),
+      })),
+
+      // Autorisation de transfert pour l'utilisateur connecté.
+      peutGererCaisses: !permissionError && peutGererCaisses === true,
 
       commissionsParLaveur: Array.from(commissionsParLaveur.values()),
       evolution,

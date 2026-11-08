@@ -1,9 +1,9 @@
 "use client";
 
+
+
 import { useCallback, useEffect, useState } from "react";
 import NouvelleOperationModal from "@/components/lavage/NouvelleOperationModal";
-//import GuideInteractif from "@/components/guide/GuideInteractif";
-
 import Link from "next/link";
 import {
   CarFront,
@@ -21,8 +21,8 @@ import {
   Menu,
   X,
   ChevronRight,
-  ChartNoAxesCombined,
 } from "lucide-react";
+
 
 const rubriques = [
   {
@@ -37,12 +37,6 @@ const rubriques = [
     href: "/dashboard/lavage/depense",
     icon: Wallet,
   },
-  /*{
-    titre: "Prévisions financières",
-    description: "Estimer le chiffre d’affaires, les commissions et les dépenses à venir.",
-    href: "/dashboard/lavage/previsions",
-    icon: ChartNoAxesCombined,
-  },*/
   {
     titre: "Véhicules",
     description: "Consulter les véhicules et leur historique.",
@@ -82,6 +76,15 @@ const dateHeure = (value) => {
   }).format(date);
 };
 
+function aujourdHuiAbidjan(date = new Date()) {
+  return new Intl.DateTimeFormat("fr-CA", {
+    timeZone: "Africa/Abidjan",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function Indicateur({
   titre,
   valeur,
@@ -89,6 +92,7 @@ function Indicateur({
   icon: Icon,
   couleurValeur,
   compact = false,
+  action,
 }) {
   return (
     <article className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition-shadow hover:shadow-md sm:p-5">
@@ -104,9 +108,7 @@ function Indicateur({
 
       <p
         className={`mt-3 break-words font-bold leading-tight tracking-tight ${
-          compact
-            ? "text-lg sm:text-2xl"
-            : "text-xl sm:text-2xl"
+          compact ? "text-lg sm:text-2xl" : "text-xl sm:text-2xl"
         }`}
         style={{ color: couleurValeur || "#14233B" }}
       >
@@ -116,6 +118,12 @@ function Indicateur({
       <p className="mt-2 text-[11px] leading-4 text-slate-500 sm:text-xs sm:leading-5">
         {detail}
       </p>
+
+      {action && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          {action}
+        </div>
+      )}
     </article>
   );
 }
@@ -154,111 +162,31 @@ export default function LavageDashboardPage() {
   const [modalNouvelleOperation, setModalNouvelleOperation] = useState(false);
   const [menuRapideOuvert, setMenuRapideOuvert] = useState(false);
 
-  function aujourdHuiAbidjan(date = new Date()) {
-    return new Intl.DateTimeFormat("fr-CA", {
-      timeZone: "Africa/Abidjan",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(date);
-  }
+  // États du transfert entre caisses
+  const [caisseTransfert, setCaisseTransfert] = useState(null);
+  const [montantTransfert, setMontantTransfert] = useState("");
+  const [motifTransfert, setMotifTransfert] = useState("");
+  const [dateTransfert, setDateTransfert] = useState(aujourdHuiAbidjan());
+  const [transfertEnCours, setTransfertEnCours] = useState(false);
+  const [erreurTransfert, setErreurTransfert] = useState("");
 
-  
-    
   const [filtreOuvert, setFiltreOuvert] = useState(false);
 
   const [dateDebut, setDateDebut] = useState();
   const [dateFin, setDateFin] = useState();
-
   const [dateDebutTemp, setDateDebutTemp] = useState();
   const [dateFinTemp, setDateFinTemp] = useState();
 
+  // Initialisation de la période sur la date d'Abidjan
   useEffect(() => {
-    const date = new Intl.DateTimeFormat("fr-CA", {
-      timeZone: "Africa/Abidjan",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
+    const date = aujourdHuiAbidjan();
 
-    //setToday(date);
     setDateDebut(date);
     setDateFin(date);
     setDateDebutTemp(date);
     setDateFinTemp(date);
   }, []);
 
-
-  /*
-  const chargerDashboard = useCallback(
-    async ({
-      silencieux = false,
-      debut = dateDebut,
-      fin = dateFin,
-    } = {}) => {
-      if (!silencieux) setChargement(true);
-      setErreur("");
-      
-
-      if (!debut || !fin) {
-        console.warn("[Dashboard Lavage] Chargement ignoré : dates non initialisées.");
-        return;
-      }
-
-      const formatDateValide = /^\d{4}-\d{2}-\d{2}$/;
-
-      if (!formatDateValide.test(debut) || !formatDateValide.test(fin)) {
-        console.error("[Dashboard Lavage] Format de date invalide :", {
-          debut,
-          fin,
-        });
-        setErreur("Les dates sélectionnées sont invalides.");
-        setChargement(false);
-        return;
-      }
-
-      if (debut > fin) {
-        setErreur("La date de début doit être antérieure ou égale à la date de fin.");
-        setChargement(false);
-        return;
-      }
-
-      try {
-        const params = new URLSearchParams({
-          date_debut: debut,
-          date_fin: fin,
-        });
-
-        const response = await fetch(
-          `/api/lavage/dashboard?${params.toString()}`,
-          { cache: "no-store" }
-        );
-
-        if (response.status === 401) {
-          window.location.replace("/login");
-          return;
-        }
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            result.error || "Impossible de charger le dashboard."
-          );
-        }
-
-        setDonnees(result);
-      } catch (error) {
-        console.error("[Dashboard Lavage] Erreur de chargement :", error);
-        setErreur(error.message || "Une erreur est survenue.");
-      } finally {
-        setChargement(false);
-      }
-    },
-    [dateDebut, dateFin]
-  );
-  */
- 
   const chargerDashboard = useCallback(
     async ({
       silencieux = false,
@@ -298,8 +226,7 @@ export default function LavageDashboardPage() {
       const cleDerniereStation =
         `maax-lavage-derniere-station:${debut}:${fin}`;
 
-      // Si le navigateur sait déjà qu'il est hors connexion,
-      // restaurer directement le cache sans appeler l'API.
+      // Restauration du cache si le navigateur est hors connexion
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         try {
           const stationId = localStorage.getItem(cleDerniereStation);
@@ -347,26 +274,22 @@ export default function LavageDashboardPage() {
           `/api/lavage/dashboard?${params.toString()}`,
           { cache: "no-store" }
         );
+
         console.log("[Dashboard Lavage] Réponse API :", {
           status: response.status,
           ok: response.ok,
           online: navigator.onLine,
         });
+
         console.log("[HORS CONNEXION] État réseau :", {
           online: navigator.onLine,
           debut,
           fin,
-          stationEnCache: localStorage.getItem(
-            `maax-lavage-derniere-station:${debut}:${fin}`
-          ),
+          stationEnCache: localStorage.getItem(cleDerniereStation),
         });
 
-        // Une réponse 401 indique un problème d'authentification.
-        // On ne restaure pas le cache dans ce cas.
+        // En cas de 401, tentative de restauration du cache connu
         if (response.status === 401) {
-          // La session n'a pas pu être validée par le serveur.
-          // On restaure uniquement le cache de la station déjà connue
-          // pour permettre la consultation hors connexion.
           try {
             const stationId = localStorage.getItem(cleDerniereStation);
 
@@ -412,8 +335,7 @@ export default function LavageDashboardPage() {
         setModeHorsConnexion(false);
         setDateMiseEnCache(null);
 
-        // Le cache est séparé par station et période.
-        // Une erreur de stockage local ne doit pas bloquer le dashboard.
+        // Enregistrement du cache par station et période
         try {
           const stationId = result?.station?.id;
 
@@ -429,10 +351,7 @@ export default function LavageDashboardPage() {
               })
             );
 
-            localStorage.setItem(
-              cleDerniereStation,
-              stationId
-            );
+            localStorage.setItem(cleDerniereStation, stationId);
           }
         } catch (erreurCache) {
           console.warn(
@@ -445,19 +364,16 @@ export default function LavageDashboardPage() {
           "[Dashboard Lavage] Erreur de chargement :",
           error
         );
+
         console.log("[Dashboard Lavage] Diagnostic réseau :", {
           message: error.message,
           online: navigator.onLine,
         });
 
-        // En cas d'échec réseau, tenter de restaurer le dernier cache
-        // connu pour cette station et cette période.
         let cacheRestaure = false;
 
         try {
-          const stationId = localStorage.getItem(
-            cleDerniereStation
-          );
+          const stationId = localStorage.getItem(cleDerniereStation);
 
           if (stationId) {
             const cleCache =
@@ -471,9 +387,7 @@ export default function LavageDashboardPage() {
               if (cache?.donnees?.station?.id === stationId) {
                 setDonnees(cache.donnees);
                 setModeHorsConnexion(true);
-                setDateMiseEnCache(
-                  cache.dateEnregistrement || null
-                );
+                setDateMiseEnCache(cache.dateEnregistrement || null);
                 setErreur("");
                 cacheRestaure = true;
               }
@@ -499,7 +413,7 @@ export default function LavageDashboardPage() {
     [dateDebut, dateFin]
   );
 
-
+  // Chargement du dashboard lorsque la période change
   useEffect(() => {
     if (!dateDebut || !dateFin) return;
 
@@ -509,8 +423,7 @@ export default function LavageDashboardPage() {
     });
   }, [dateDebut, dateFin, chargerDashboard]);
 
-
-  // Chargement des prévisions de la station active.
+  // Chargement des prévisions de la station active
   useEffect(() => {
     const stationId = donnees?.station?.id;
 
@@ -544,7 +457,6 @@ export default function LavageDashboardPage() {
             }
           );
 
-          // Redirection conservée pour protéger les données.
           window.location.replace("/login");
           return;
         }
@@ -585,6 +497,142 @@ export default function LavageDashboardPage() {
     };
   }, [donnees?.station?.id]);
 
+  // Ouverture du modal de transfert
+  function ouvrirModalTransfert(caisse) {
+    if (!donnees?.peutGererCaisses || modeHorsConnexion) return;
+
+    // La caisse principale ne peut jamais être une destination.
+    if (
+      String(caisse?.code || "").trim().toUpperCase() === "PRINCIPALE"
+    ) {
+      return;
+    }
+
+    setCaisseTransfert(caisse);
+    setMontantTransfert("");
+    setMotifTransfert("");
+    setDateTransfert(aujourdHuiAbidjan());
+    setErreurTransfert("");
+  }
+
+  function fermerModalTransfert() {
+    if (transfertEnCours) return;
+
+    setCaisseTransfert(null);
+    setMontantTransfert("");
+    setMotifTransfert("");
+    setErreurTransfert("");
+    setDateTransfert(aujourdHuiAbidjan());
+  }
+
+  // Confirmation du transfert
+  async function confirmerTransfert() {
+    if (!caisseTransfert) {
+      setErreurTransfert("La caisse de destination est introuvable.");
+      return;
+    }
+
+    const caisseDestinationId = caisseTransfert.caisse_id;
+
+    if (!caisseDestinationId) {
+      setErreurTransfert(
+        "Impossible de récupérer l'identifiant de la caisse destination."
+      );
+      return;
+    }
+
+    // Vérification supplémentaire de la destination
+    if (
+      String(caisseTransfert.code || "").trim().toUpperCase() ===
+        "PRINCIPALE" ||
+      caisseDestinationId === caissePrincipaleDashboard?.caisse_id
+    ) {
+      setErreurTransfert(
+        "La caisse principale ne peut pas être sa propre destination."
+      );
+      return;
+    }
+
+    const montantSaisi = Number(montantTransfert);
+
+    if (!Number.isSafeInteger(montantSaisi) || montantSaisi <= 0) {
+      setErreurTransfert("Saisissez un montant entier positif.");
+      return;
+    }
+
+    if (montantSaisi > soldeCaissePrincipale) {
+      setErreurTransfert(
+        "Le montant dépasse le solde disponible de la caisse principale."
+      );
+      return;
+    }
+
+    if (!dateTransfert || dateTransfert > aujourdHuiAbidjan()) {
+      setErreurTransfert("La date comptable est invalide.");
+      return;
+    }
+
+    if (!donnees?.station?.id) {
+      setErreurTransfert("Impossible d'identifier la station active.");
+      return;
+    }
+
+    if (modeHorsConnexion || !navigator.onLine) {
+      setErreurTransfert(
+        "Le transfert est impossible en mode hors connexion."
+      );
+      return;
+    }
+
+    setTransfertEnCours(true);
+    setErreurTransfert("");
+
+    try {
+      const params = new URLSearchParams({
+        lavage_id: donnees.station.id,
+      });
+
+      const response = await fetch(
+        `/api/lavage/transfert-caisses?${params.toString()}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            caisse_destination_id: caisseDestinationId,
+            montant: montantSaisi,
+            motif: motifTransfert.trim(),
+            date_transfert: dateTransfert,
+          }),
+        }
+      );
+
+      const resultat = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          resultat.error || "Impossible d'effectuer le transfert."
+        );
+      }
+
+      // Fermeture et réinitialisation du formulaire
+      setCaisseTransfert(null);
+      setMontantTransfert("");
+      setMotifTransfert("");
+      setDateTransfert(aujourdHuiAbidjan());
+
+      // Actualisation des soldes et indicateurs
+      await chargerDashboard({ silencieux: true });
+    } catch (error) {
+      console.error("[LAVAGE] Erreur transfert :", error);
+      setErreurTransfert(
+        error.message || "Une erreur est survenue pendant le transfert."
+      );
+    } finally {
+      setTransfertEnCours(false);
+    }
+  }
 
   if (chargement && !donnees) {
     return (
@@ -592,6 +640,7 @@ export default function LavageDashboardPage() {
         <div className="rounded-2xl bg-[#14233B]/5 p-4">
           <RefreshCw size={24} className="animate-spin text-[#14233B]" />
         </div>
+
         <p className="text-sm font-medium">
           Chargement des statistiques du lavage...
         </p>
@@ -630,6 +679,17 @@ export default function LavageDashboardPage() {
     indicateursCaisses = [],
     devise = "FCFA",
   } = donnees;
+
+  // Identification de la caisse principale à partir des caisses actives.
+  // L'API expose caisse_id et non id dans caissesActives.
+  const caissePrincipaleDashboard = (donnees.caissesActives || []).find(
+    (caisse) =>
+      String(caisse.code || "").trim().toUpperCase() === "PRINCIPALE"
+  );
+
+  const soldeCaissePrincipale = Number(
+    caissePrincipaleDashboard?.solde_actuel || 0
+  );
 
   const totalDepensesPayees = Number(
     statistiques.totalDepensesPayees ?? 0
@@ -738,8 +798,12 @@ export default function LavageDashboardPage() {
           </div>
         </div>
       )}
+
       {/* En-tête */}
-      <section data-guide="dashboard" className="relative overflow-hidden rounded-3xl bg-[#14233B] p-4 text-white shadow-lg sm:p-6 md:p-9">
+      <section
+        data-guide="dashboard"
+        className="relative overflow-hidden rounded-3xl bg-[#14233B] p-4 text-white shadow-lg sm:p-6 md:p-9"
+      >
         <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full border-[25px] border-white/[0.04] sm:h-56 sm:w-56" />
         <div className="pointer-events-none absolute -bottom-16 right-20 h-36 w-36 rounded-full bg-[#D8BD83]/[0.07] blur-2xl" />
 
@@ -767,7 +831,6 @@ export default function LavageDashboardPage() {
             </div>
           </div>
 
-          
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
             <button
               data-guide="nouvelle-operation"
@@ -778,15 +841,6 @@ export default function LavageDashboardPage() {
               <CarFront size={19} />
               Nouvelle opération
             </button>
-
-            {/*<Link
-              href="/dashboard/lavage/previsions"
-              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#D8BD83]/60 bg-[#D8BD83]/10 px-4 py-3 text-sm font-semibold text-[#D8BD83] transition hover:bg-[#D8BD83]/20"
-            >
-              <ChartNoAxesCombined size={18} />
-              Prévisions financières
-              <ArrowRight size={16} />
-            </Link>*/}
 
             <button
               type="button"
@@ -826,7 +880,6 @@ export default function LavageDashboardPage() {
               </button>
             </div>
           </div>
-
         </div>
 
         {menuRapideOuvert && (
@@ -845,7 +898,6 @@ export default function LavageDashboardPage() {
                   <span className="min-w-0 flex-1">{rubrique.titre}</span>
                   <ChevronRight size={15} className="shrink-0 text-slate-400" />
                 </Link>
-                
               );
             })}
           </nav>
@@ -869,20 +921,26 @@ export default function LavageDashboardPage() {
         </div>
       )}
 
-      {/* Indicateurs du jour */}
+      {/* Indicateurs */}
       <section data-guide="indicateurs">
         <SectionTitre
           titre={
             dateDebut === dateFin
               ? dateDebut === aujourdHuiAbidjan()
                 ? "Activité du jour"
-                : `Activité du ${new Date(`${dateDebut}T12:00:00`).toLocaleDateString("fr-FR")}`
+                : `Activité du ${new Date(
+                    `${dateDebut}T12:00:00`
+                  ).toLocaleDateString("fr-FR")}`
               : "Activité sur la période"
           }
           description={
             dateDebut === dateFin
               ? "Les chiffres clés de votre station."
-              : `Du ${new Date(`${dateDebut}T12:00:00`).toLocaleDateString("fr-FR")} au ${new Date(`${dateFin}T12:00:00`).toLocaleDateString("fr-FR")}.`
+              : `Du ${new Date(
+                  `${dateDebut}T12:00:00`
+                ).toLocaleDateString("fr-FR")} au ${new Date(
+                  `${dateFin}T12:00:00`
+                ).toLocaleDateString("fr-FR")}.`
           }
         />
 
@@ -898,7 +956,9 @@ export default function LavageDashboardPage() {
           <Indicateur
             compact
             titre="Lavages terminés"
-            valeur={Number(statistiques.prestationsTerminees || 0).toLocaleString("fr-FR")}
+            valeur={Number(
+              statistiques.prestationsTerminees || 0
+            ).toLocaleString("fr-FR")}
             detail="Services enregistrés aujourd’hui"
             icon={CarFront}
           />
@@ -928,6 +988,7 @@ export default function LavageDashboardPage() {
             icon={Wallet}
             couleurValeur="#B45309"
           />
+
           <Indicateur
             compact
             titre="Solde caisse PRINCIPALE"
@@ -939,24 +1000,44 @@ export default function LavageDashboardPage() {
             icon={Wallet}
             couleurValeur="#166534"
           />
-          {indicateursCaisses.map((caisse) => (
-            <Indicateur
-              key={caisse.caisse_id}
-              compact
-              titre={caisse.nom}
-              valeur={montant(caisse.total_entrees, devise)}
-              detail={`${Number(caisse.nombre_entrees || 0).toLocaleString("fr-FR")} entrée(s) sur la période`}
-              icon={Wallet}
-              couleurValeur="#135b8b"
-            />
-          ))}
+
+          {indicateursCaisses.map((caisse) => {
+            const estCaissePrincipale =
+              String(caisse.code || "").trim().toUpperCase() ===
+              "PRINCIPALE";
+
+            return (
+              <Indicateur
+                key={caisse.caisse_id}
+                compact
+                titre={caisse.nom}
+                valeur={montant(caisse.total_entrees, devise)}
+                detail={`${Number(
+                  caisse.nombre_entrees || 0
+                ).toLocaleString("fr-FR")} entrée(s) sur la période`}
+                icon={Wallet}
+                couleurValeur="#135b8b"
+                action={
+                  donnees.peutGererCaisses &&
+                  !modeHorsConnexion &&
+                  !estCaissePrincipale ? (
+                    <button
+                      type="button"
+                      onClick={() => ouvrirModalTransfert(caisse)}
+                      className="flex min-h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#14233B] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#20385B] active:scale-[0.98]"
+                    >
+                      <Wallet size={14} />
+                      Transférer
+                    </button>
+                  ) : null
+                }
+              />
+            );
+          })}
         </div>
       </section>
 
-      
-      
-
-      {/* Graphique et état */}
+      {/* Évolution du chiffre d'affaires */}
       <section className="grid min-w-0 gap-4 lg:grid-cols-2 lg:gap-5">
         <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:col-span-2">
           <div className="flex items-start gap-3">
@@ -1015,79 +1096,6 @@ export default function LavageDashboardPage() {
             </div>
           )}
         </div>
-
-        {/* 
-        <div data-guide="etat-station" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-[#14233B]/5 p-2.5 text-[#14233B]">
-              <Wallet size={20} />
-            </div>
-            <h2 className="font-bold text-[#14233B]">État de la station</h2>
-          </div>
-
-          <div className="mt-4 divide-y divide-slate-100">
-            
-            <div className="flex items-center justify-between gap-3 py-3">
-              <span className="text-xs text-slate-500 sm:text-sm">
-                Solde des caisses
-              </span>
-              <span className="text-right text-sm font-bold text-[#14233B]">
-                {montant(statistiques.soldeCaisses, devise)}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-xl bg-[#D8BD83]/15 px-3 py-3">
-              <div className="min-w-0">
-                <span className="block text-xs font-semibold text-[#14233B] sm:text-sm">
-                  Solde caisse PRINCIPALE
-                </span>
-                <span className="mt-1 block text-[10px] text-slate-500 sm:text-xs">
-                  Solde disponible actuellement
-                </span>
-              </div>
-              <span className="shrink-0 text-right text-sm font-bold text-[#166534] sm:text-base">
-                {montant(statistiques.soldeCaissePrincipale, devise)}
-              </span>
-            </div>
-
-
-            <div className="flex items-center justify-between gap-3 py-3">
-              <span className="text-xs text-slate-500 sm:text-sm">
-                Caisses actives
-              </span>
-              <span className="font-semibold text-[#14233B]">
-                {statistiques.caissesActives ?? 0}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 py-3">
-              <span className="text-xs text-slate-500 sm:text-sm">
-                Prestations actives
-              </span>
-              <span className="font-semibold text-[#14233B]">
-                {statistiques.prestationsConfigurees ?? 0}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 py-3">
-              <span className="text-xs text-slate-500 sm:text-sm">
-                Laveurs actifs
-              </span>
-              <span className="font-semibold text-[#14233B]">
-                {statistiques.laveursActifs ?? 0}
-              </span>
-            </div>
-          </div>
-
-          <Link
-            href="/dashboard/lavage/services"
-            className="mt-3 flex min-h-12 items-center justify-between gap-3 rounded-xl bg-[#14233B] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#20385B] active:scale-[0.99]"
-          >
-            <span>Voir les prestations</span>
-            <ArrowRight size={17} className="shrink-0" />
-          </Link>
-        </div>
-        */}
       </section>
 
       {/* Derniers lavages */}
@@ -1181,9 +1189,12 @@ export default function LavageDashboardPage() {
           </Link>
         </div>
       </section>
-      
+
       {/* Prévisions du chiffre d'affaires */}
-      <section data-guide="previsions" className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <section
+        data-guide="previsions"
+        className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+      >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-[#D8BD83]/20 p-2.5 text-[#14233B]">
@@ -1202,13 +1213,13 @@ export default function LavageDashboardPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              {!chargementPrevisions && donneesPrevisions && (
-                <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${couleurFiabilite}`}>
-                  Fiabilité {libelleFiabilite.toLowerCase()}
-                </span>
-              )}
-            </div>
+            {!chargementPrevisions && donneesPrevisions && (
+              <span
+                className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${couleurFiabilite}`}
+              >
+                Fiabilité {libelleFiabilite.toLowerCase()}
+              </span>
+            )}
 
             <Link
               href="/dashboard/lavage/previsions"
@@ -1333,53 +1344,13 @@ export default function LavageDashboardPage() {
         )}
       </section>
 
-      {/* Gestion 
-      <section data-guide="gestion">
-        <SectionTitre
-          titre="Gestion de la station"
-          description="Retrouvez rapidement les fonctionnalités du module."
-        />
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
-          {rubriques.map((rubrique) => {
-            const Icon = rubrique.icon;
-
-            return (
-              <Link
-                key={rubrique.href}
-                href={rubrique.href}
-                className="group flex min-h-[84px] items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-[#D8BD83] hover:shadow-md active:bg-slate-50 sm:min-h-0 sm:items-start sm:p-5"
-              >
-                <div className="shrink-0 rounded-xl bg-[#14233B]/5 p-3 text-[#14233B] transition group-hover:bg-[#D8BD83]/20">
-                  <Icon size={21} />
-                </div>
-
-                <div className="min-w-0 flex-1 sm:pt-1">
-                  <h3 className="text-sm font-semibold text-[#14233B]">
-                    {rubrique.titre}
-                  </h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    {rubrique.description}
-                  </p>
-                </div>
-
-                <ArrowRight
-                  size={17}
-                  className="ml-auto shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-[#14233B] sm:mt-1"
-                />
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-      */}
-
       <p className="px-1 pb-2 text-[11px] leading-5 text-slate-400 sm:text-xs">
         Les indicateurs sont calculés à partir des données enregistrées.
         Les recettes affichées ne remplacent pas le contrôle de caisse et
         le rapprochement des paiements.
       </p>
 
+      {/* Modal de filtre par période */}
       {filtreOuvert && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-[2px]"
@@ -1428,9 +1399,10 @@ export default function LavageDashboardPage() {
                 <span className="mb-1.5 block text-xs font-semibold text-slate-700">
                   Du
                 </span>
+
                 <input
                   type="date"
-                  value={dateDebutTemp}
+                  value={dateDebutTemp || ""}
                   max={aujourdHuiAbidjan()}
                   onChange={(event) => setDateDebutTemp(event.target.value)}
                   className="block h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800 outline-none transition focus:border-[#14233B] focus:ring-2 focus:ring-[#14233B]/10"
@@ -1441,9 +1413,10 @@ export default function LavageDashboardPage() {
                 <span className="mb-1.5 block text-xs font-semibold text-slate-700">
                   Au
                 </span>
+
                 <input
                   type="date"
-                  value={dateFinTemp}
+                  value={dateFinTemp || ""}
                   min={dateDebutTemp || undefined}
                   max={aujourdHuiAbidjan()}
                   onChange={(event) => setDateFinTemp(event.target.value)}
@@ -1452,11 +1425,13 @@ export default function LavageDashboardPage() {
               </label>
             </div>
 
-            {dateDebutTemp && dateFinTemp && dateDebutTemp > dateFinTemp && (
-              <p className="mt-2 text-xs text-red-600">
-                La date de début doit précéder la date de fin.
-              </p>
-            )}
+            {dateDebutTemp &&
+              dateFinTemp &&
+              dateDebutTemp > dateFinTemp && (
+                <p className="mt-2 text-xs text-red-600">
+                  La date de début doit précéder la date de fin.
+                </p>
+              )}
 
             <div className="mt-5 flex justify-end gap-2 border-t border-slate-100 pt-4">
               <button
@@ -1494,6 +1469,200 @@ export default function LavageDashboardPage() {
         </div>
       )}
 
+      {/* Modal de transfert entre caisses */}
+      {caisseTransfert && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px]"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !transfertEnCours
+            ) {
+              fermerModalTransfert();
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titre-modal-transfert"
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3 bg-[#14233B] p-4 text-white sm:p-5">
+              <div>
+                <div className="mb-2 inline-flex rounded-lg bg-white/10 p-2 text-[#D8BD83]">
+                  <Wallet size={20} />
+                </div>
+
+                <h2
+                  id="titre-modal-transfert"
+                  className="text-base font-bold"
+                >
+                  Transfert entre caisses
+                </h2>
+
+                <p className="mt-1 text-xs text-slate-300">
+                  Transférer de l'argent vers une autre caisse.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={fermerModalTransfert}
+                disabled={transfertEnCours}
+                aria-label="Fermer"
+                className="rounded-lg p-1.5 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+              >
+                <X size={19} />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-4 sm:p-5">
+              {/* Caisse source : toujours la caisse principale */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">Caisse source</p>
+
+                <p className="mt-1 font-bold text-[#14233B]">
+                  Caisse principale
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Solde disponible :{" "}
+                  <strong className="text-emerald-700">
+                    {montant(soldeCaissePrincipale, devise)}
+                  </strong>
+                </p>
+              </div>
+
+              {/* Caisse de destination */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">
+                  Caisse de destination
+                </p>
+
+                <p className="mt-1 font-bold text-[#14233B]">
+                  {caisseTransfert.nom}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Cette caisse a été sélectionnée depuis le tableau de bord.
+                </p>
+              </div>
+
+              {/* Montant */}
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-slate-700">
+                  Montant à transférer ({devise})
+                </span>
+
+                <input
+                  type="number"
+                  min="1"
+                  max={soldeCaissePrincipale}
+                  step="1"
+                  inputMode="numeric"
+                  value={montantTransfert}
+                  onChange={(event) =>
+                    setMontantTransfert(event.target.value)
+                  }
+                  disabled={transfertEnCours}
+                  placeholder="Ex. 10 000"
+                  className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-[#14233B] focus:ring-2 focus:ring-[#14233B]/10"
+                />
+
+                {soldeCaissePrincipale <= 0 && (
+                  <span className="mt-1 block text-xs text-red-600">
+                    La caisse principale ne dispose d'aucun solde disponible.
+                  </span>
+                )}
+              </label>
+
+              {/* Date comptable */}
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-slate-700">
+                  Date comptable
+                </span>
+
+                <input
+                  type="date"
+                  value={dateTransfert}
+                  max={aujourdHuiAbidjan()}
+                  onChange={(event) => setDateTransfert(event.target.value)}
+                  disabled={transfertEnCours}
+                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#14233B] focus:ring-2 focus:ring-[#14233B]/10"
+                />
+
+                <span className="mt-1 block text-[11px] text-slate-500">
+                  Les dates passées sont autorisées. Les dates futures sont
+                  interdites.
+                </span>
+              </label>
+
+              {/* Motif */}
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-slate-700">
+                  Motif (facultatif)
+                </span>
+
+                <textarea
+                  rows={2}
+                  value={motifTransfert}
+                  onChange={(event) =>
+                    setMotifTransfert(event.target.value)
+                  }
+                  disabled={transfertEnCours}
+                  placeholder="Ex. Approvisionnement de la caisse..."
+                  className="w-full resize-none rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-[#14233B] focus:ring-2 focus:ring-[#14233B]/10"
+                />
+              </label>
+
+              {erreurTransfert && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700">
+                  {erreurTransfert}
+                </div>
+              )}
+
+              <div className="flex gap-2 border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  onClick={fermerModalTransfert}
+                  disabled={transfertEnCours}
+                  className="min-h-11 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="button"
+                  onClick={confirmerTransfert}
+                  disabled={
+                    transfertEnCours ||
+                    !montantTransfert ||
+                    !Number.isSafeInteger(Number(montantTransfert)) ||
+                    Number(montantTransfert) <= 0 ||
+                    Number(montantTransfert) > soldeCaissePrincipale ||
+                    !dateTransfert ||
+                    dateTransfert > aujourdHuiAbidjan() ||
+                    soldeCaissePrincipale <= 0 ||
+                    modeHorsConnexion
+                  }
+                  className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#14233B] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#20385B] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {transfertEnCours ? (
+                    <>
+                      <RefreshCw size={16} className="animate-spin" />
+                      Transfert...
+                    </>
+                  ) : (
+                    "Confirmer"
+                  )}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
       {/* Nouvelle opération */}
       <NouvelleOperationModal
         open={modalNouvelleOperation}
@@ -1503,7 +1672,6 @@ export default function LavageDashboardPage() {
           chargerDashboard({ silencieux: true });
         }}
       />
-      {/* <GuideInteractif />*/}
     </main>
   );
 }
