@@ -30,6 +30,17 @@ import { supabase } from "@/lib/supabase/client";
 const COULEUR_OR = "#D8BD83";
 const COULEUR_BLEU = "#14233B";
 
+const MODES_PAIEMENT = [
+  { code: "especes", libelle: "Espèces" },
+  { code: "wave", libelle: "Wave" },
+  { code: "orange_money", libelle: "Orange Money" },
+  { code: "mtn_money", libelle: "MTN Money" },
+  { code: "moov_money", libelle: "Moov Money" },
+  { code: "carte", libelle: "Carte bancaire" },
+  { code: "virement", libelle: "Virement bancaire" },
+  { code: "autre", libelle: "Autre" },
+];
+
 const formatMontant = (montant) =>
   new Intl.NumberFormat("fr-FR", {
     style: "currency",
@@ -147,6 +158,12 @@ export default function CaisseLavagePage() {
   const [caisseAjustement, setCaisseAjustement] = useState(null);
   const [ajustementEnCours, setAjustementEnCours] = useState(false);
   const [erreurAjustement, setErreurAjustement] = useState("");
+
+  const [affectationsPaiement, setAffectationsPaiement] = useState({});
+  const [affectationsInitiales, setAffectationsInitiales] = useState({});
+  const [sauvegardeMode, setSauvegardeMode] = useState("");
+  const [erreurAffectations, setErreurAffectations] = useState("");
+  const [succesAffectations, setSuccesAffectations] = useState("");
 
   const [formAjustement, setFormAjustement] = useState({
     sens: "entree",
@@ -383,6 +400,7 @@ export default function CaisseLavagePage() {
         const [
           { data: caissesData, error: erreurCaisses },
           { data: mouvementsData, error: erreurMouvements },
+          { data: affectationsData, error: erreurAffectationsChargement },
         ] = await Promise.all([
           supabase
             .from("lavage_caisses")
@@ -400,13 +418,29 @@ export default function CaisseLavagePage() {
             .eq("lavage_id", stationId)
             .order("date_mouvement", { ascending: false })
             .limit(500),
+
+          supabase
+            .from("lavage_modes_paiement_caisses")
+            .select("mode_paiement, caisse_id")
+            .eq("lavage_id", stationId),
         ]);
 
         if (erreurCaisses) throw erreurCaisses;
         if (erreurMouvements) throw erreurMouvements;
+        if (erreurAffectationsChargement) throw erreurAffectationsChargement;
+
+        const associations = {};
+
+        (affectationsData || []).forEach((item) => {
+          associations[item.mode_paiement] = item.caisse_id;
+        });
 
         setCaisses(caissesData || []);
         setMouvements(mouvementsData || []);
+        setAffectationsPaiement(associations);
+        setAffectationsInitiales(associations);
+        setErreurAffectations("");
+        setSuccesAffectations("");
       } catch (err) {
         console.error("Erreur de chargement des caisses :", err);
         setErreur(erreurSupabase(err));
@@ -868,6 +902,69 @@ export default function CaisseLavagePage() {
     }
   };
 
+  const enregistrerAffectationPaiement = async (modePaiement) => {
+    const caisseId = affectationsPaiement[modePaiement];
+
+    if (!lavageId) {
+      setErreurAffectations("Aucune station sélectionnée.");
+      return;
+    }
+
+    if (!caisseId) {
+      setErreurAffectations("Sélectionnez une caisse pour ce mode de paiement.");
+      return;
+    }
+
+    const caisse = caisses.find(
+      (item) => item.id === caisseId && item.actif === true
+    );
+
+    if (!caisse) {
+      setErreurAffectations(
+        "La caisse sélectionnée est introuvable ou désactivée."
+      );
+      return;
+    }
+
+    if (affectationsInitiales[modePaiement] === caisseId) {
+      return;
+    }
+
+    setSauvegardeMode(modePaiement);
+    setErreurAffectations("");
+    setSuccesAffectations("");
+
+    try {
+      const { error } = await supabase
+        .from("lavage_modes_paiement_caisses")
+        .upsert(
+          {
+            lavage_id: lavageId,
+            mode_paiement: modePaiement,
+            caisse_id: caisseId,
+          },
+          {
+            onConflict: "lavage_id,mode_paiement",
+          }
+        );
+
+      if (error) throw error;
+
+      setAffectationsInitiales((ancien) => ({
+        ...ancien,
+        [modePaiement]: caisseId,
+      }));
+
+      setSuccesAffectations(
+        `Le mode ${MODES_PAIEMENT.find((m) => m.code === modePaiement)?.libelle || modePaiement} est maintenant associé à la caisse « ${caisse.nom} ».`
+      );
+    } catch (err) {
+      console.error("Erreur d'affectation du mode de paiement :", err);
+      setErreurAffectations(erreurSupabase(err));
+    } finally {
+      setSauvegardeMode("");
+    }
+  };
 
   const demanderSuppression = (caisse) => {
     setErreur("");
@@ -1274,6 +1371,162 @@ export default function CaisseLavagePage() {
                   ))}
                 </div>
               )}
+            </section>
+
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-[#D8BD83]/20 p-3 text-[#14233B]">
+                    <Landmark className="h-5 w-5" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">
+                      Affectation des modes de paiement
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Définissez dans quelle caisse chaque paiement sera
+                      automatiquement enregistré.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4 p-5">
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+                  Chaque mode de paiement est associé à une seule caisse.
+                  Plusieurs modes peuvent utiliser la même caisse.
+                  Une modification ne concerne que les nouvelles opérations :
+                  l'historique financier reste inchangé.
+                </div>
+
+                {erreurAffectations && (
+                  <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>{erreurAffectations}</p>
+                  </div>
+                )}
+
+                {succesAffectations && (
+                  <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>{succesAffectations}</p>
+                  </div>
+                )}
+
+                <div className="divide-y divide-slate-100">
+                  {MODES_PAIEMENT.map((mode) => {
+                    const caisseAffectee = caisses.find(
+                      (caisse) =>
+                        caisse.id === affectationsPaiement[mode.code]
+                    );
+
+                    const caisseInitiale =
+                      affectationsInitiales[mode.code];
+
+                    const modifie =
+                      affectationsPaiement[mode.code] !== caisseInitiale;
+
+                    const enCours = sauvegardeMode === mode.code;
+
+                    return (
+                      <div
+                        key={mode.code}
+                        className="grid gap-3 py-4 sm:grid-cols-[1fr_1.5fr_auto] sm:items-center"
+                      >
+                        <div>
+                          <p className="font-semibold text-slate-800">
+                            {mode.libelle}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {mode.code}
+                          </p>
+                        </div>
+
+                        <div>
+                          <select
+                            value={affectationsPaiement[mode.code] || ""}
+                            onChange={(event) => {
+                              setAffectationsPaiement((ancien) => ({
+                                ...ancien,
+                                [mode.code]: event.target.value,
+                              }));
+
+                              setErreurAffectations("");
+                              setSuccesAffectations("");
+                            }}
+                            disabled={!!sauvegardeMode}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-slate-400 disabled:bg-slate-50"
+                          >
+                            <option value="">
+                              Sélectionner une caisse
+                            </option>
+
+                            {caisseAffectee && !caisseAffectee.actif && (
+                              <option
+                                value={caisseAffectee.id}
+                                disabled
+                              >
+                                {caisseAffectee.nom} — Désactivée
+                              </option>
+                            )}
+
+                            {caissesActives.map((caisse) => (
+                              <option
+                                key={caisse.id}
+                                value={caisse.id}
+                              >
+                                {caisse.nom} — {caisse.code}
+                              </option>
+                            ))}
+                          </select>
+
+                          {caisseAffectee && !caisseAffectee.actif && (
+                            <p className="mt-1 text-xs text-amber-700">
+                              Cette caisse est désactivée. Réaffectez ce mode
+                              à une caisse active.
+                            </p>
+                          )}
+
+                          {!affectationsPaiement[mode.code] && (
+                            <p className="mt-1 text-xs text-red-600">
+                              Aucune caisse associée à ce mode.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              enregistrerAffectationPaiement(mode.code)
+                            }
+                            disabled={
+                              !modifie ||
+                              !affectationsPaiement[mode.code] ||
+                              !!sauvegardeMode
+                            }
+                            className={`${boutonBase} w-full sm:w-auto`}
+                            style={{
+                              backgroundColor: modifie
+                                ? COULEUR_BLEU
+                                : "#E2E8F0",
+                              color: modifie ? "white" : "#64748B",
+                            }}
+                          >
+                            {enCours ? (
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="h-4 w-4" />
+                            )}
+                            {enCours ? "Enregistrement..." : "Enregistrer"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </section>
 
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
