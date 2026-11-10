@@ -1377,7 +1377,7 @@ export default function CaisseLavagePage() {
               <div className="border-b border-slate-200 p-5">
                 <div className="flex items-start gap-3">
                   <div className="rounded-xl bg-[#D8BD83]/20 p-3 text-[#14233B]">
-                    <Landmark className="h-5 w-5" />
+                    <Landmark className="h-5 w-5"/>
                   </div>
 
                   <div>
