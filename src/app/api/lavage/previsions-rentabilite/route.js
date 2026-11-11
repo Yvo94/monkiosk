@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
@@ -708,6 +707,200 @@ function calculerPrevisionRechargementElectricite(
       "La date est indicative. Elle suppose que chaque dépense enregistrée correspond à un événement de rechargement comparable.",
   };
 }
+function estUnAchatSavon(depense) {
+  const categorie = normaliserTexte(depense.categorie);
+  const libelle = normaliserTexte(depense.libelle);
+
+  // Règles métier validées :
+  // - tous les achats de la catégorie Produits de lavage ;
+  // - les dépenses de Produits de nettoyage dont le libellé contient "Achat".
+  return (
+    categorie === "produits de lavage" ||
+    (categorie === "produits de nettoyage" && /\bachat\b/.test(libelle))
+  );
+}
+
+function calculerPrevisionProchainAchatSavon(depenses, services, aujourdHui) {
+  const achatsSavon = depenses.filter(estUnAchatSavon);
+  const achatsParDate = new Map();
+
+  // Regrouper les achats de savon effectués le même jour.
+  for (const depense of achatsSavon) {
+    const date = new Date(depense.date_depense).toISOString().slice(0, 10);
+    const existant = achatsParDate.get(date);
+
+    if (existant) {
+      existant.montant += montantNumerique(depense.montant);
+      if (new Date(depense.date_depense) > new Date(existant.dateHeure)) {
+        existant.dateHeure = depense.date_depense;
+      }
+    } else {
+      achatsParDate.set(date, {
+        date,
+        dateHeure: depense.date_depense,
+        montant: montantNumerique(depense.montant),
+      });
+    }
+  }
+
+  const achats = [...achatsParDate.values()].sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
+
+  if (achats.length < 2) {
+    return {
+      disponible: false,
+      datePrevue: null,
+      montantMoyenAchat: arrondir(moyenne(achats.map((a) => a.montant))),
+      nombreAchatsObserves: achats.length,
+      nombreIntervallesAnalyses: 0,
+      confiance: "insuffisante",
+      explication:
+        "Il faut au moins deux achats de produits de lavage enregistrés pour mesurer le nombre de prestations réalisées entre deux achats.",
+    };
+  }
+
+  const intervalles = [];
+
+  for (let i = 1; i < achats.length; i++) {
+    const precedent = achats[i - 1];
+    const suivant = achats[i];
+    const debut = new Date(precedent.dateHeure).getTime();
+    const fin = new Date(suivant.dateHeure).getTime();
+    const dureeJours = (fin - debut) / 86400000;
+
+    if (!Number.isFinite(dureeJours) || dureeJours <= 0) continue;
+
+    const nombreOperations = services.filter((service) => {
+      const dateService = new Date(service.date_service).getTime();
+      return dateService > debut && dateService <= fin;
+    }).length;
+
+    intervalles.push({
+      dateDebut: precedent.date,
+      dateFin: suivant.date,
+      dureeJours,
+      nombreOperations,
+      montantAchat: suivant.montant,
+      operationsParJour: nombreOperations / dureeJours,
+    });
+  }
+
+  if (!intervalles.length) {
+    return {
+      disponible: false,
+      datePrevue: null,
+      montantMoyenAchat: arrondir(moyenne(achats.map((a) => a.montant))),
+      nombreAchatsObserves: achats.length,
+      nombreIntervallesAnalyses: 0,
+      confiance: "insuffisante",
+      explication:
+        "Les dates des achats ne permettent pas encore de calculer des intervalles exploitables.",
+    };
+  }
+
+  const operationsParIntervalle = intervalles
+    .map((intervalle) => intervalle.nombreOperations)
+    .filter((nombre) => nombre > 0);
+
+  if (!operationsParIntervalle.length) {
+    return {
+      disponible: false,
+      datePrevue: null,
+      montantMoyenAchat: arrondir(moyenne(achats.map((a) => a.montant))),
+      nombreAchatsObserves: achats.length,
+      nombreIntervallesAnalyses: intervalles.length,
+      confiance: "insuffisante",
+      explication:
+        "Aucune prestation terminée n'a été retrouvée entre les achats observés.",
+    };
+  }
+
+  const objectifOperations = mediane(operationsParIntervalle);
+  const dernierAchat = achats[achats.length - 1];
+  const dernierAchatTimestamp = new Date(dernierAchat.dateHeure).getTime();
+
+  const operationsDepuisDernierAchat = services.filter(
+    (service) => new Date(service.date_service).getTime() > dernierAchatTimestamp
+  ).length;
+
+  // Rythme d'activité observé sur les 14 derniers jours.
+  const debutActivite = ajouterJours(aujourdHui, -13);
+  const operationsRecentes = services.filter((service) => {
+    const date = new Date(service.date_service).toISOString().slice(0, 10);
+    return date >= debutActivite && date <= aujourdHui;
+  }).length;
+
+  let operationsParJour = operationsRecentes / 14;
+  if (operationsParJour <= 0) {
+    operationsParJour = moyenne(
+      intervalles
+        .filter((intervalle) => intervalle.operationsParJour > 0)
+        .map((intervalle) => intervalle.operationsParJour)
+    );
+  }
+
+  if (operationsParJour <= 0) {
+    return {
+      disponible: false,
+      datePrevue: null,
+      montantMoyenAchat: arrondir(moyenne(achats.map((a) => a.montant))),
+      nombreAchatsObserves: achats.length,
+      nombreIntervallesAnalyses: intervalles.length,
+      objectifOperations: arrondir(objectifOperations),
+      operationsDepuisDernierAchat,
+      confiance: "insuffisante",
+      explication:
+        "Le rythme récent de la station ne permet pas encore d'estimer une date de prochain achat de savon.",
+    };
+  }
+
+  const operationsRestantes = Math.max(
+    0,
+    objectifOperations - operationsDepuisDernierAchat
+  );
+  const joursRestants =
+    operationsRestantes === 0 ? 0 : Math.ceil(operationsRestantes / operationsParJour);
+  const datePrevue = ajouterJours(aujourdHui, joursRestants);
+
+  const ecartType = Math.sqrt(
+    moyenne(
+      operationsParIntervalle.map((nombre) =>
+        Math.pow(nombre - objectifOperations, 2)
+      )
+    )
+  );
+  const coefficientVariation = objectifOperations > 0
+    ? ecartType / objectifOperations
+    : 1;
+
+  let confiance = "faible";
+  if (intervalles.length >= 3 && coefficientVariation <= 0.25) {
+    confiance = "bonne";
+  } else if (intervalles.length >= 2 && coefficientVariation <= 0.5) {
+    confiance = "moyenne";
+  }
+
+  return {
+    disponible: true,
+    datePrevue,
+    montantMoyenAchat: arrondir(moyenne(achats.map((a) => a.montant))),
+    dernierAchat: dernierAchat.date,
+    dernierMontantAchat: arrondir(dernierAchat.montant),
+    nombreAchatsObserves: achats.length,
+    nombreIntervallesAnalyses: intervalles.length,
+    objectifOperations: arrondir(objectifOperations),
+    operationsDepuisDernierAchat,
+    operationsRestantesEstimees: arrondir(operationsRestantes),
+    rythmeRecentOperationsParJour: Number(operationsParJour.toFixed(2)),
+    joursRestantsEstimes: joursRestants,
+    confiance,
+    methode:
+      "Médiane du nombre de prestations terminées entre les achats de produits de lavage, ajustée selon le rythme des 14 derniers jours.",
+    avertissement:
+      "La date est indicative. Le calcul suppose que les achats enregistrés correspondent à des quantités de savon comparables ; les achats de volumes différents peuvent modifier la date réelle.",
+  };
+}
 
 
 function calculerRecommandationsDepenses(depenses, aujourdHui) {
@@ -921,7 +1114,7 @@ function genererSuggestionsDepenses(depenses, recommandationsHistoriques) {
 }
 
 function construirePrevisionsDetailleesDepenses(depenses, aujourdHui) {
-  const historiques = calculerRecommandationsDepenses(
+    const historiques = calculerRecommandationsDepenses(
     depenses,
     aujourdHui
   );
@@ -1278,6 +1471,13 @@ export async function GET(request) {
             aujourdHui
         );
 
+    const previsionProchainAchatSavon =
+        calculerPrevisionProchainAchatSavon(
+            depensesElectriciteHistoriques,
+            services,
+            aujourdHui
+        );
+
     const totauxDepensesParDate = Object.fromEntries(
       datesHistoriques.map((date) => [date, 0])
     );
@@ -1432,6 +1632,9 @@ export async function GET(request) {
         rechargementElectricite:
             previsionRechargementElectricite,
 
+        prochainAchatSavon:
+            previsionProchainAchatSavon,
+
         recommandations:
             recommandationsDetailleesDepenses.recommandations,
 
@@ -1467,6 +1670,8 @@ export async function GET(request) {
         "Les estimations sont provisoires lorsque l'historique est court ou peu actif.",
         "Le prochain rechargement électrique est estimé à partir du nombre d'opérations réalisées entre les rechargements historiques et du rythme récent de la station.",
         "La prévision suppose que les rechargements enregistrés sont comparables. Les recharges partielles, les variations de consommation des équipements et les changements de tarifs peuvent modifier la date réelle.",
+        "Le prochain achat de savon est estimé à partir des prestations terminées entre les achats enregistrés en catégories Produits de lavage, ou Produits de nettoyage avec un libellé contenant Achat.",
+        "La prévision de savon suppose que les achats correspondent à des quantités comparables ; les volumes différents peuvent modifier la date réelle.",
       ],
     });
   } catch (error) {

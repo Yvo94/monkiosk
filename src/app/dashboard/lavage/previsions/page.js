@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -215,6 +214,7 @@ export default function PrevisionsRentabilitePage() {
   const recommandations = donnees?.recommandations || [];
 
   const rechargement = previsionDepenses.rechargementElectricite;
+  const prochainAchatSavon = previsionDepenses.prochainAchatSavon;
 
   // Calcul du chiffre d'affaires
   const totalCA = joursCA.reduce(
@@ -250,6 +250,7 @@ export default function PrevisionsRentabilitePage() {
   // ------------------------------------------------
   // Recommandations liées aux dépenses
   // ------------------------------------------------
+  
 
   function creerRecommandationDepense(categorie) {
     const nom = String(categorie.categorie || "").toLowerCase();
@@ -288,6 +289,7 @@ export default function PrevisionsRentabilitePage() {
   const recommandationsDepenses = categoriesDepenses.map(
     creerRecommandationDepense
   );
+  
 
   // ------------------------------------------------
   // Écrans de chargement et d'erreur
@@ -551,7 +553,7 @@ export default function PrevisionsRentabilitePage() {
         </div>
       </BlocSection>
 
-      {/* Recommandations */}
+      {/* Recommandations 
       <BlocSection
         titre="Recommandations pour votre station"
         description="Actions à anticiper selon votre activité et vos dépenses."
@@ -620,6 +622,7 @@ export default function PrevisionsRentabilitePage() {
             )}
         </div>
       </BlocSection>
+      */}
 
       {/* Prévision électrique */}
       <BlocSection
@@ -723,6 +726,105 @@ export default function PrevisionsRentabilitePage() {
                   <p className="mt-2 text-xs text-slate-500">
                     {rechargement.nombreRechargementsObserves || 0} rechargement(s)
                     observé(s) · {rechargement.nombreIntervallesAnalyses || 0}{" "}
+                    intervalle(s) analysé(s).
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </BlocSection>
+
+      {/* Prévision du prochain achat de savon */}
+      <BlocSection
+        titre="Prochain achat de savon"
+        description="Estimation basée sur le nombre de prestations réalisées entre les achats de produits de lavage."
+        action={
+          prochainAchatSavon?.disponible && (
+            <span className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+              Fiabilité : {prochainAchatSavon.confiance}
+            </span>
+          )
+        }
+      >
+        {!prochainAchatSavon?.disponible ? (
+          <MessageVide
+            icone={Droplets}
+            titre="Prévision du savon indisponible"
+            description={
+              prochainAchatSavon?.explication ||
+              "Enregistrez au moins deux achats dans la catégorie Produits de lavage, ou dans Produits de nettoyage avec un libellé contenant Achat, pour calculer un premier cycle."
+            }
+          />
+        ) : (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5">
+              <div className="flex items-center gap-3">
+                <Droplets className="text-cyan-700" size={26} />
+                <div>
+                  <p className="text-sm text-slate-600">Prochain achat estimé</p>
+                  <p className="mt-1 text-2xl font-bold text-[#14233B]">
+                    {dateCourte(prochainAchatSavon.datePrevue)}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 text-sm text-slate-600">
+                Environ{" "}
+                <strong>{prochainAchatSavon.joursRestantsEstimes} jour(s)</strong>{" "}
+                restant(s).
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {[
+                {
+                  titre: "Dernier achat",
+                  valeur: dateCourte(prochainAchatSavon.dernierAchat),
+                  detail: montant(prochainAchatSavon.dernierMontantAchat),
+                },
+                {
+                  titre: "Prestations par cycle",
+                  valeur: Math.round(prochainAchatSavon.objectifOperations || 0),
+                  detail: "Objectif estimé",
+                },
+                {
+                  titre: "Prestations restantes",
+                  valeur: Math.round(prochainAchatSavon.operationsRestantesEstimees || 0),
+                  detail: "Depuis le dernier achat",
+                },
+                {
+                  titre: "Rythme récent",
+                  valeur: Number(
+                    prochainAchatSavon.rythmeRecentOperationsParJour || 0
+                  ).toLocaleString("fr-FR", { maximumFractionDigits: 1 }),
+                  detail: "Prestations par jour",
+                },
+              ].map((item) => (
+                <div key={item.titre} className="rounded-xl bg-slate-50 p-4">
+                  <p className="text-xs text-slate-500">{item.titre}</p>
+                  <p className="mt-2 break-words text-lg font-bold text-slate-900">
+                    {item.valeur}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-1 shrink-0 text-amber-600" size={20} />
+                <div>
+                  <p className="font-semibold text-slate-800">À propos de cette estimation</p>
+                  <p className="mt-2 text-sm leading-5 text-slate-500">
+                    {prochainAchatSavon.methode ||
+                      "Estimation statistique basée sur les prestations terminées entre les achats de produits de lavage."}
+                  </p>
+                  <p className="mt-2 text-sm leading-5 text-slate-500">
+                    {prochainAchatSavon.avertissement ||
+                      "La date est indicative et dépend de la comparabilité des quantités achetées."}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {prochainAchatSavon.nombreAchatsObserves || 0} achat(s) observé(s) · {prochainAchatSavon.nombreIntervallesAnalyses || 0}{" "}
                     intervalle(s) analysé(s).
                   </p>
                 </div>
