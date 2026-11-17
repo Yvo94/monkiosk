@@ -18,6 +18,7 @@ import {
   Wallet,
   X,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 
 const CATEGORIES = [
@@ -91,6 +92,7 @@ export default function DepensesLavagePage() {
 
   const [chargement, setChargement] = useState(true);
   const [enregistrement, setEnregistrement] = useState(false);
+  const [annulationId, setAnnulationId] = useState("");
   const [afficherFormulaire, setAfficherFormulaire] = useState(false);
   const [erreur, setErreur] = useState("");
   const [succes, setSucces] = useState("");
@@ -264,6 +266,76 @@ export default function DepensesLavagePage() {
     }
   }
 
+  async function annulerDepense(depense) {
+    if (!depense?.id || !lavageId) {
+      setErreur("Impossible d'identifier cette dépense.");
+      return;
+    }
+
+    if (depense.statut === "annulee") {
+      setErreur("Cette dépense est déjà annulée.");
+      return;
+    }
+
+    const montant = formatMontant(depense.montant, devise);
+
+    const confirmation = window.confirm(
+      `Confirmer l'annulation de cette dépense ?\n\n` +
+      `Libellé : ${depense.libelle}\n` +
+      `Montant : ${montant}\n` +
+      `Statut : ${depense.statut === "payee" ? "Payée" : "En attente"}\n\n` +
+      (
+        depense.statut === "payee"
+          ? "La caisse d'origine sera recréditée de ce montant."
+          : "Aucun mouvement de caisse ne sera effectué."
+      )
+    );
+
+    if (!confirmation) return;
+
+    setErreur("");
+    setSucces("");
+    setAnnulationId(depense.id);
+
+    try {
+      const response = await fetch("/api/lavage/depenses", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          lavage_id: lavageId,
+          depense_id: depense.id,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.status === 401) {
+        window.location.replace("/login");
+        return;
+      }
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.error || "Impossible d'annuler cette dépense."
+        );
+      }
+
+      setSucces(
+        result.message || "Dépense annulée avec succès."
+      );
+
+      await chargerDonnees(lavageId);
+    } catch (error) {
+      setErreur(
+        error.message || "Une erreur est survenue pendant l'annulation."
+      );
+    } finally {
+      setAnnulationId("");
+    }
+  }
+
   const depensesFiltrees = useMemo(() => {
     const terme = recherche.trim().toLocaleLowerCase("fr");
 
@@ -305,7 +377,13 @@ export default function DepensesLavagePage() {
         (total, d) => total + Number(d.montant || 0),
         0
       ),
-      nombre: depenses.length,
+      nombre: depenses.filter(
+        (d) => d.statut !== "annulee"
+      ).length,
+
+      nombreAnnulees: depenses.filter(
+        (d) => d.statut === "annulee"
+      ).length,
     };
   }, [depenses]);
 
@@ -450,7 +528,7 @@ export default function DepensesLavagePage() {
                 {statistiques.nombre}
               </p>
               <p className="mt-2 text-xs text-slate-500">
-                Enregistrements de cette station
+                {statistiques.nombreAnnulees} dépense(s) annulée(s)
               </p>
             </div>
           </section>
@@ -674,7 +752,7 @@ export default function DepensesLavagePage() {
                 >
                   <option value="toutes">Tous les statuts</option>
                   <option value="payee">Payées</option>
-                  <option value="en_attente">En attente</option>
+                  <option value="annulee">Annulées</option>
                 </select>
 
                 <select
@@ -719,6 +797,7 @@ export default function DepensesLavagePage() {
                         <th className="px-5 py-4">Caisse</th>
                         <th className="px-5 py-4">Statut</th>
                         <th className="px-5 py-4 text-right">Montant</th>
+                        <th className="px-5 py-4 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -749,17 +828,48 @@ export default function DepensesLavagePage() {
                               className={`rounded-full px-3 py-1 text-xs font-semibold ${
                                 depense.statut === "payee"
                                   ? "bg-emerald-50 text-emerald-700"
-                                  : "bg-amber-50 text-amber-700"
+                                  : depense.statut === "en_attente"
+                                    ? "bg-amber-50 text-amber-700"
+                                    : "bg-red-50 text-red-700"
                               }`}
                             >
                               {depense.statut === "payee"
                                 ? "Payée"
-                                : "En attente"}
+                                : depense.statut === "en_attente"
+                                  ? "En attente"
+                                  : "Annulée"}
                             </span>
                           </td>
                           <td className="whitespace-nowrap px-5 py-4 text-right font-bold text-[#14233B]">
                             {formatMontant(depense.montant, devise)}
                           </td>
+                          <td className="px-5 py-4 text-right">
+                          {depense.statut !== "annulee" && (
+                            <button
+                              type="button"
+                              onClick={() => annulerDepense(depense)}
+                              disabled={annulationId === depense.id}
+                              className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              title="Annuler cette dépense"
+                            >
+                              {annulationId === depense.id ? (
+                                <LoaderCircle size={14} className="animate-spin" />
+                              ) : (
+                                <Trash2 size={14} />
+                              )}
+
+                              {annulationId === depense.id
+                                ? "Annulation..."
+                                : "Annuler"}
+                            </button>
+                          )}
+
+                          {depense.statut === "annulee" && (
+                            <span className="text-xs text-slate-400">
+                              Aucune action
+                            </span>
+                          )}
+                        </td>
                         </tr>
                       ))}
                     </tbody>
@@ -799,18 +909,42 @@ export default function DepensesLavagePage() {
                         <span className="text-xs text-slate-500">
                           {depense.caisse?.nom || "Aucune caisse associée"}
                         </span>
+
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-semibold ${
                             depense.statut === "payee"
                               ? "bg-emerald-50 text-emerald-700"
-                              : "bg-amber-50 text-amber-700"
+                              : depense.statut === "en_attente"
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-red-50 text-red-700"
                           }`}
                         >
                           {depense.statut === "payee"
                             ? "Payée"
-                            : "En attente"}
+                            : depense.statut === "en_attente"
+                              ? "En attente"
+                              : "Annulée"}
                         </span>
                       </div>
+
+                      {depense.statut !== "annulee" && (
+                        <button
+                          type="button"
+                          onClick={() => annulerDepense(depense)}
+                          disabled={annulationId === depense.id}
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {annulationId === depense.id ? (
+                            <LoaderCircle size={16} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={16} />
+                          )}
+
+                          {annulationId === depense.id
+                            ? "Annulation en cours..."
+                            : "Annuler cette dépense"}
+                        </button>
+                      )}
 
                       {depense.notes && (
                         <p className="text-xs text-slate-500">
@@ -835,7 +969,7 @@ export default function DepensesLavagePage() {
         lavageId={lavageId}
         devise={devise}
         onSuccess={async () => {
-            await chargerDepenses();
+            await chargerDonnees(lavageId)
         }}
     />
     </main>

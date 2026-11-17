@@ -109,6 +109,26 @@ async function getAuthenticatedUser(supabase) {
   return user;
 }
 
+async function getUserProfile(supabase, userId) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, role, actif, lavage_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Impossible de récupérer le profil : ${error.message}`
+    );
+  }
+
+  if (!data || data.actif !== true) {
+    throw new Error("Compte utilisateur inactif ou introuvable.");
+  }
+
+  return data;
+}
+
 /*
 async function getOwnedStations(supabase, userId) {
   const { data, error } = await supabase
@@ -238,26 +258,39 @@ async function fetchRowsInBatches(
 }
 
 
-async function getOperations(supabase, lavageId) {
+async function getOperations(
+  supabase,
+  lavageId,
+  userId,
+  role
+) {
+  let servicesQuery = supabase
+    .from("lavage_services")
+    .select(`
+      id,
+      lavage_id,
+      created_by,
+      vehicule_id,
+      client_id,
+      laveur_id,
+      caisse_id,
+      prestation_id,
+      date_service,
+      created_at,
+      montant_total,
+      statut,
+      notes,
+      commission_laveur
+    `)
+    .eq("lavage_id", lavageId);
+
+  // Isolation des opérations du caissier.
+  if (role === "caissier") {
+    servicesQuery = servicesQuery.eq("created_by", userId);
+  }
+
   const services = await fetchRows(
-    supabase
-      .from("lavage_services")
-      .select(`
-        id,
-        lavage_id,
-        vehicule_id,
-        client_id,
-        laveur_id,
-        caisse_id,
-        prestation_id,
-        date_service,
-        created_at,
-        montant_total,
-        statut,
-        notes,
-        commission_laveur
-      `)
-      .eq("lavage_id", lavageId)
+    servicesQuery
       .order("date_service", { ascending: false })
       .limit(1000),
     "Impossible de charger les opérations"
@@ -395,6 +428,118 @@ function validatePayload(payload) {
     return "Les données de l'opération sont invalides.";
   }
 
+  // La date est obligatoire.
+  // L'heure est facultative et n'est pas prise en compte.
+  if (
+    typeof payload.date_service !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?)?$/.test(
+      payload.date_service
+    )
+  ) {
+    return "La date de la prestation est obligatoire.";
+  }
+
+  // On récupère uniquement la partie date.
+  const dateService = payload.date_service.substring(0, 10);
+
+  const correspondance = dateService.match(
+    /^(\d{4})-(\d{2})-(\d{2})$/
+  );
+
+  if (!correspondance) {
+    return "La date de la prestation est invalide.";
+  }
+
+  const [, annee, mois, jour] = correspondance.map(
+    (value, index) =>
+      index === 0 ? value : Number(value)
+  );
+
+  // Vérification de la validité réelle du calendrier.
+  const dateVerifiee = new Date(
+    Date.UTC(annee, mois - 1, jour)
+  );
+
+  if (
+    dateVerifiee.getUTCFullYear() !== annee ||
+    dateVerifiee.getUTCMonth() !== mois - 1 ||
+    dateVerifiee.getUTCDate() !== jour
+  ) {
+    return "La date de la prestation est invalide.";
+  }
+
+  if (!payload.caisse_id) {
+    return "La caisse est obligatoire.";
+  }
+
+  if (!payload.laveur_id) {
+    return "Le laveur est obligatoire.";
+  }
+
+  if (!payload.type_vehicule_id) {
+    return "Le type de véhicule est obligatoire.";
+  }
+
+  const paymentModes = [
+    "especes",
+    "wave",
+    "orange_money",
+    "mtn_money",
+    "moov_money",
+    "carte",
+    "virement",
+    "autre",
+  ];
+
+  if (!paymentModes.includes(payload.mode_paiement)) {
+    return "Le mode de paiement est invalide.";
+  }
+
+  const quantity = Number(
+    payload.quantite_operations ?? 1
+  );
+
+  if (
+    !Number.isInteger(quantity) ||
+    quantity < 1 ||
+    quantity > 50
+  ) {
+    return "La quantité doit être un nombre entier compris entre 1 et 50.";
+  }
+
+  if (
+    !Array.isArray(payload.details) ||
+    payload.details.length !== 1 ||
+    !payload.details[0]?.prestation_id ||
+    Number(payload.details[0]?.quantite ?? 1) !== 1
+  ) {
+    return (
+      "Une opération doit contenir exactement un type de lavage, " +
+      "en quantité 1."
+    );
+  }
+
+  if (
+    payload.client?.email &&
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+      String(payload.client.email).trim()
+    )
+  ) {
+    return "L'adresse e-mail du client n'est pas valide.";
+  }
+
+  return null;
+}
+
+/*function validatePayload(payload) {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload)
+  ) {
+    return "Les données de l'opération sont invalides.";
+  }
+
   // Accepte YYYY-MM-DDTHH:mm et YYYY-MM-DDTHH:mm:ss
   if (
     typeof payload.date_service !== "string" ||
@@ -499,7 +644,7 @@ function validatePayload(payload) {
   }
 
   return null;
-}
+}*/
 
 
 // GET /api/lavage/services
@@ -575,9 +720,24 @@ export async function GET(request) {
       return reponseLicenceRequise();
     }
 
+    const profile = await getUserProfile(
+      supabase,
+      user.id
+    );
+
+    // Vérification supplémentaire du rattachement.
+    if (
+      profile.role !== "admin" &&
+      profile.lavage_id !== station.id
+    ) {
+      return jsonError("Accès non autorisé à cette station.", 403);
+    }
+
     const operations = await getOperations(
       supabase,
-      station.id
+      station.id,
+      user.id,
+      profile.role
     );
 
     return NextResponse.json({
@@ -731,11 +891,10 @@ export async function POST(request) {
             ...payload,
             idempotency_key: idempotencyKey,
             quantite_operations: Number(payload.quantite_operations),
-            heure_api: heureApiReference,
+            date_service: payload.date_service.substring(0, 10),
           },
         }
       );
-
 
 
     if (error) {
@@ -805,6 +964,25 @@ export async function DELETE(request) {
 
     if (!user) {
       return jsonError("Authentification requise.", 401);
+    }
+
+    const profile = await getUserProfile(
+      supabase,
+      user.id
+    );
+
+    if (profile.role === "caissier") {
+      return jsonError(
+        "Vous n'avez pas l'autorisation de supprimer une opération.",
+        403
+      );
+    }
+
+    if (!["admin", "gerant"].includes(profile.role)) {
+      return jsonError(
+        "Rôle non autorisé pour cette opération.",
+        403
+      );
     }
 
     let body;

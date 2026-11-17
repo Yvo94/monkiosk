@@ -51,7 +51,6 @@ async function getAuthenticatedUser(supabase) {
   return user;
 }
 
-
 async function verifierLicenceLavage(userId) {
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -96,7 +95,6 @@ async function verifierLicenceLavage(userId) {
     erreur: false,
   };
 }
-
 
 async function getOwnedStations(supabase, userId) {
   const { data, error } = await supabase
@@ -246,7 +244,7 @@ function validateDepense(body) {
 export async function GET(request) {
   try {
     const supabase = await createSupabaseServerClient();
-    
+
     const user = await getAuthenticatedUser(supabase);
 
     if (!user) {
@@ -269,7 +267,6 @@ export async function GET(request) {
         { code: "LICENCE_REQUIRED", redirect: "/activation-licence" }
       );
     }
-
 
     const stations = await getOwnedStations(supabase, user.id);
     const { searchParams } = new URL(request.url);
@@ -320,10 +317,11 @@ export async function GET(request) {
 }
 
 // POST /api/lavage/depenses
+// Enregistre une nouvelle dépense.
 export async function POST(request) {
   try {
     const supabase = await createSupabaseServerClient();
-    
+
     const user = await getAuthenticatedUser(supabase);
 
     if (!user) {
@@ -346,7 +344,6 @@ export async function POST(request) {
         { code: "LICENCE_REQUIRED", redirect: "/activation-licence" }
       );
     }
-
 
     let body;
 
@@ -443,6 +440,144 @@ export async function POST(request) {
     );
   } catch (error) {
     console.error("[POST /api/lavage/depenses]", error);
+
+    return jsonError(
+      error.message || "Une erreur interne est survenue.",
+      500
+    );
+  }
+}
+
+// DELETE /api/lavage/depenses
+// Annule une dépense payée ou en attente.
+// Le remboursement éventuel de la caisse est effectué par la fonction SQL.
+export async function DELETE(request) {
+  try {
+    const supabase = await createSupabaseServerClient();
+
+    const user = await getAuthenticatedUser(supabase);
+
+    if (!user) {
+      return jsonError("Session expirée.", 401);
+    }
+
+    const controleLicence = await verifierLicenceLavage(user.id);
+
+    if (controleLicence.erreur) {
+      return jsonError(
+        "Impossible de vérifier votre licence.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return jsonError(
+        "Votre licence Lavage est absente, expirée ou révoquée. Veuillez activer une licence valide.",
+        403,
+        { code: "LICENCE_REQUIRED", redirect: "/activation-licence" }
+      );
+    }
+
+    let body;
+
+    try {
+      body = await request.json();
+    } catch {
+      return jsonError("Le corps de la requête doit être un JSON valide.");
+    }
+
+    const lavageId =
+      typeof body?.lavage_id === "string"
+        ? body.lavage_id.trim()
+        : "";
+
+    const depenseId =
+      typeof body?.depense_id === "string"
+        ? body.depense_id.trim()
+        : "";
+
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    if (!uuidRegex.test(lavageId)) {
+      return jsonError("L'identifiant de la station est invalide.");
+    }
+
+    if (!uuidRegex.test(depenseId)) {
+      return jsonError("L'identifiant de la dépense est invalide.");
+    }
+
+    const stations = await getOwnedStations(supabase, user.id);
+
+    const station = stations.find(
+      (item) => item.id === lavageId
+    );
+
+    if (!station) {
+      return jsonError(
+        "Station introuvable, inactive ou accès non autorisé.",
+        403
+      );
+    }
+
+    const { data, error } = await supabase.rpc(
+      "lavage_annuler_depense",
+      {
+        p_lavage_id: station.id,
+        p_depense_id: depenseId,
+      }
+    );
+
+    if (error) {
+      console.error("[RPC lavage_annuler_depense]", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+
+      const message = error.message || "";
+
+      const status =
+        error.code === "42501"
+          ? 403
+          : error.code === "23505"
+            ? 409
+            : message.toLowerCase().includes("déjà annulée")
+              ? 409
+              : message.toLowerCase().includes("introuvable")
+                ? 404
+                : 400;
+
+      return jsonError(
+        message || "Impossible d'annuler cette dépense.",
+        status,
+        error.code ? { code: error.code } : undefined
+      );
+    }
+
+    if (!data?.success) {
+      return jsonError(
+        data?.message || data?.error ||
+          "L'annulation de la dépense n'a pas été confirmée.",
+        400
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: data.caisse_recreditee
+        ? "Dépense annulée. La caisse d'origine a été recréditée."
+        : "Dépense annulée avec succès.",
+      station: {
+        id: station.id,
+        nom: station.nom,
+        devise: station.devise || "FCFA",
+      },
+      depense: data,
+    });
+  } catch (error) {
+    console.error("[DELETE /api/lavage/depenses]", error);
 
     return jsonError(
       error.message || "Une erreur interne est survenue.",
