@@ -96,7 +96,7 @@ async function verifierLicenceLavage(userId) {
   };
 }
 
-async function getOwnedStations(supabase, userId) {
+/*async function getOwnedStations(supabase, userId) {
   const { data, error } = await supabase
     .from("lavages")
     .select("id, nom, devise, actif")
@@ -111,7 +111,66 @@ async function getOwnedStations(supabase, userId) {
   }
 
   return data || [];
+}*/
+
+
+async function getOwnedStations(supabase, userId) {
+  // Récupérer le profil de l'utilisateur connecté
+  const { data: profile, error: profileError } = await supabase
+    .from("users")
+    .select("id, role, actif, lavage_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new Error(
+      `Impossible de charger le profil utilisateur : ${profileError.message}`
+    );
+  }
+
+  if (!profile || profile.actif !== true) {
+    return [];
+  }
+
+  // Construire la requête des stations accessibles
+  let query = supabase
+    .from("lavages")
+    .select("id, nom, devise, actif, owner_id")
+    .eq("actif", true);
+
+  // Administrateur : ses propres stations
+  if (profile.role === "admin") {
+    query = query.eq("owner_id", userId);
+  }
+
+  // Gérant et caissier : leur station de rattachement
+  else if (
+    profile.role === "gerant" ||
+    profile.role === "caissier"
+  ) {
+    if (!profile.lavage_id) {
+      return [];
+    }
+
+    query = query.eq("id", profile.lavage_id);
+  }
+
+  // Refuser les autres rôles
+  else {
+    return [];
+  }
+
+  const { data, error } = await query.order("nom");
+
+  if (error) {
+    throw new Error(
+      `Impossible de charger les stations : ${error.message}`
+    );
+  }
+
+  return data || [];
 }
+
 
 async function getStationCaisses(supabase, lavageId) {
   const { data, error } = await supabase
@@ -251,6 +310,7 @@ export async function GET(request) {
       return jsonError("Session expirée.", 401);
     }
 
+    /*
     const controleLicence = await verifierLicenceLavage(user.id);
 
     if (controleLicence.erreur) {
@@ -259,6 +319,7 @@ export async function GET(request) {
         500
       );
     }
+    
 
     if (!controleLicence.valide) {
       return jsonError(
@@ -267,6 +328,7 @@ export async function GET(request) {
         { code: "LICENCE_REQUIRED", redirect: "/activation-licence" }
       );
     }
+    */
 
     const stations = await getOwnedStations(supabase, user.id);
     const { searchParams } = new URL(request.url);
@@ -290,6 +352,28 @@ export async function GET(request) {
       return jsonError(
         "Station introuvable, inactive ou accès non autorisé.",
         403
+      );
+    }
+
+    const controleLicence = await verifierLicenceLavage(
+      station.owner_id
+    );
+
+    if (controleLicence.erreur) {
+      return jsonError(
+        "Impossible de vérifier la licence de cette station.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return jsonError(
+        "Votre licence Lavage est absente, expirée ou révoquée. Veuillez activer une licence valide.",
+        403,
+        {
+          code: "LICENCE_REQUIRED",
+          redirect: "/activation-licence",
+        }
       );
     }
 
@@ -328,23 +412,6 @@ export async function POST(request) {
       return jsonError("Session expirée.", 401);
     }
 
-    const controleLicence = await verifierLicenceLavage(user.id);
-
-    if (controleLicence.erreur) {
-      return jsonError(
-        "Impossible de vérifier votre licence.",
-        500
-      );
-    }
-
-    if (!controleLicence.valide) {
-      return jsonError(
-        "Votre licence Lavage est absente, expirée ou révoquée. Veuillez activer une licence valide.",
-        403,
-        { code: "LICENCE_REQUIRED", redirect: "/activation-licence" }
-      );
-    }
-
     let body;
 
     try {
@@ -377,6 +444,28 @@ export async function POST(request) {
       return jsonError(
         "Station introuvable, inactive ou accès non autorisé.",
         403
+      );
+    }
+
+    const controleLicence = await verifierLicenceLavage(
+      station.owner_id
+    );
+
+    if (controleLicence.erreur) {
+      return jsonError(
+        "Impossible de vérifier la licence de cette station.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return jsonError(
+        "Votre licence Lavage est absente, expirée ou révoquée. Veuillez activer une licence valide.",
+        403,
+        {
+          code: "LICENCE_REQUIRED",
+          redirect: "/activation-licence",
+        }
       );
     }
 
@@ -461,23 +550,6 @@ export async function DELETE(request) {
       return jsonError("Session expirée.", 401);
     }
 
-    const controleLicence = await verifierLicenceLavage(user.id);
-
-    if (controleLicence.erreur) {
-      return jsonError(
-        "Impossible de vérifier votre licence.",
-        500
-      );
-    }
-
-    if (!controleLicence.valide) {
-      return jsonError(
-        "Votre licence Lavage est absente, expirée ou révoquée. Veuillez activer une licence valide.",
-        403,
-        { code: "LICENCE_REQUIRED", redirect: "/activation-licence" }
-      );
-    }
-
     let body;
 
     try {
@@ -517,6 +589,28 @@ export async function DELETE(request) {
       return jsonError(
         "Station introuvable, inactive ou accès non autorisé.",
         403
+      );
+    }
+
+    const controleLicence = await verifierLicenceLavage(
+      station.owner_id
+    );
+
+    if (controleLicence.erreur) {
+      return jsonError(
+        "Impossible de vérifier la licence de cette station.",
+        500
+      );
+    }
+
+    if (!controleLicence.valide) {
+      return jsonError(
+        "Votre licence Lavage est absente, expirée ou révoquée. Veuillez activer une licence valide.",
+        403,
+        {
+          code: "LICENCE_REQUIRED",
+          redirect: "/activation-licence",
+        }
       );
     }
 
