@@ -865,23 +865,6 @@ export async function POST(request) {
       // Capturer une seule fois l'heure de référence de l'API.
       // La Côte d'Ivoire est en UTC+0.
       const dateDiagnostic = new Date();
-      const heureApiReference = dateDiagnostic.toISOString();
-
-      console.log("[DEBUG DATE LAVAGE]", {
-        date_service: payload.date_service,
-        date_recue: heureApiReference,
-        heure_abidjan: new Intl.DateTimeFormat("fr-FR", {
-          timeZone: "Africa/Abidjan",
-          dateStyle: "short",
-          timeStyle: "medium",
-        }).format(dateDiagnostic),
-      });
-
-      console.log("[DIAGNOSTIC AVANT RPC]", {
-        date_service: payload.date_service,
-        heure_api_iso: heureApiReference,
-        heure_api_ms: dateDiagnostic.getTime(),
-      });
 
       const { data, error } = await supabase.rpc(
         "lavage_enregistrer_prestation",

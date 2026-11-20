@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
+import SaisieGroupeeModal from "@/components/lavage/SaisieGroupeeModal";
 //import NouvelleOperationModal from "../NouvelleOperationModal";
 import {
   ArrowLeft,
@@ -25,6 +26,7 @@ import {
   Wallet,
   X,
   Trash2,
+  Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 
@@ -366,6 +368,7 @@ export default function ServicesPage() {
   const [tarifs, setTarifs] = useState([]);
   const [caisses, setCaisses] = useState([]);
   const [operations, setOperations] = useState([]);
+  const [modalSaisieGroupee, setModalSaisieGroupee] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [loadingCatalogue, setLoadingCatalogue] = useState(false);
@@ -1264,6 +1267,14 @@ export default function ServicesPage() {
             >
               <Plus size={19} />
               Nouvelle opération
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalSaisieGroupee(true)}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#D8BD83] px-5 py-3 font-bold text-[#14233B] transition hover:bg-[#e6d09f] disabled:opacity-50"
+            >
+              <Users size={19} />
+              Saisie groupée
             </button>
           </div>
         </header>
@@ -2632,6 +2643,14 @@ export default function ServicesPage() {
           </section>
         </div>
       )}
+      <SaisieGroupeeModal
+        open={modalSaisieGroupee}
+        onClose={() => setModalSaisieGroupee(false)}
+        onSuccess={() => {
+          setModalSaisieGroupee(false);
+          chargerDashboard({ silencieux: true });
+        }}
+      />
     </main>
   );
 }

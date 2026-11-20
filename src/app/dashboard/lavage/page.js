@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import NouvelleOperationModal from "@/components/lavage/NouvelleOperationModal";
+import SaisieGroupeeModal from "@/components/lavage/SaisieGroupeeModal";
 import Link from "next/link";
 import {
   CarFront,
@@ -161,6 +162,7 @@ export default function LavageDashboardPage() {
 
   const [modalNouvelleOperation, setModalNouvelleOperation] = useState(false);
   const [menuRapideOuvert, setMenuRapideOuvert] = useState(false);
+  const [modalSaisieGroupee, setModalSaisieGroupee] = useState(false);
 
   // États du transfert entre caisses
   const [caisseTransfert, setCaisseTransfert] = useState(null);
@@ -840,6 +842,20 @@ export default function LavageDashboardPage() {
             >
               <CarFront size={19} />
               Nouvelle opération
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalSaisieGroupee(true)}
+              disabled={modeHorsConnexion || !navigator.onLine}
+              title={
+                modeHorsConnexion || !navigator.onLine
+                  ? "La saisie groupée nécessite une connexion Internet."
+                  : "Enregistrer plusieurs prestations en une seule saisie."
+              }
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#D8BD83] px-4 py-3 text-sm font-bold text-[#14233B] shadow-sm transition hover:bg-[#e6ce98]"
+            >
+              <Users size={19} />
+              Saisie groupée
             </button>
 
             <button
@@ -1669,6 +1685,14 @@ export default function LavageDashboardPage() {
         onClose={() => setModalNouvelleOperation(false)}
         onSuccess={() => {
           setModalNouvelleOperation(false);
+          chargerDashboard({ silencieux: true });
+        }}
+      />
+      <SaisieGroupeeModal
+        open={modalSaisieGroupee}
+        onClose={() => setModalSaisieGroupee(false)}
+        onSuccess={() => {
+          setModalSaisieGroupee(false);
           chargerDashboard({ silencieux: true });
         }}
       />
