@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
@@ -2646,10 +2645,10 @@ export default function ServicesPage() {
       <SaisieGroupeeModal
         open={modalSaisieGroupee}
         onClose={() => setModalSaisieGroupee(false)}
-        onSuccess={() => {
-          setModalSaisieGroupee(false);
-          chargerDashboard({ silencieux: true });
-        }}
+        onSuccess={async (data) => {
+            setModalSaisieGroupee(false);
+            await refreshPage(data?.lavage_id || form.lavage_id);
+          }}
       />
     </main>
   );
